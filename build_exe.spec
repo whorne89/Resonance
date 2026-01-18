@@ -4,7 +4,7 @@ block_cipher = None
 
 a = Analysis(
     ['src\\main.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[
         ('src\\resources', 'resources'),
@@ -16,6 +16,14 @@ a = Analysis(
         'PySide6.QtWidgets',
         'sounddevice',
         'pynput',
+        'core.audio_recorder',
+        'core.transcriber',
+        'core.keyboard_typer',
+        'core.hotkey_manager',
+        'gui.system_tray',
+        'gui.settings_dialog',
+        'utils.config',
+        'utils.logger',
     ],
     hookspath=[],
     hooksconfig={},

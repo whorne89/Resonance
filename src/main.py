@@ -324,8 +324,10 @@ class VTTApplication(QObject):
         if model_size != self.transcriber.model_size:
             self.transcriber.change_model(model_size)
 
-        # Update typing speed
+        # Update typing speed and method
         self.keyboard_typer.set_typing_speed(self.config.get_typing_speed())
+        use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
+        self.keyboard_typer.use_clipboard = use_clipboard
 
     def quit(self):
         """Quit application."""

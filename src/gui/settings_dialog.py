@@ -6,7 +6,8 @@ Allows configuration of hotkey, model, audio device, etc.
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
-    QMessageBox, QFormLayout, QProgressBar
+    QMessageBox, QFormLayout, QProgressBar, QRadioButton,
+    QButtonGroup
 )
 from PySide6.QtCore import Signal, QTimer, Qt
 from PySide6.QtGui import QPalette, QColor, QKeyEvent
@@ -215,6 +216,10 @@ class SettingsDialog(QDialog):
         audio_group = self.create_audio_group()
         layout.addWidget(audio_group)
 
+        # Typing settings
+        typing_group = self.create_typing_group()
+        layout.addWidget(typing_group)
+
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -314,6 +319,34 @@ class SettingsDialog(QDialog):
         group.setLayout(layout)
         return group
 
+    def create_typing_group(self):
+        """Create typing method configuration group."""
+        group = QGroupBox("Typing Method")
+        layout = QVBoxLayout()
+
+        # Radio buttons for typing method
+        self.typing_char_radio = QRadioButton("Type character-by-character")
+        self.typing_paste_radio = QRadioButton("Use clipboard paste (Ctrl+V)")
+
+        # Button group to make them mutually exclusive
+        self.typing_method_group = QButtonGroup()
+        self.typing_method_group.addButton(self.typing_char_radio, 0)
+        self.typing_method_group.addButton(self.typing_paste_radio, 1)
+
+        layout.addWidget(self.typing_char_radio)
+        layout.addWidget(self.typing_paste_radio)
+
+        # Info label
+        info_label = QLabel(
+            "Character-by-character: More compatible but slower\n"
+            "Clipboard paste: Faster and more reliable (recommended)"
+        )
+        info_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(info_label)
+
+        group.setLayout(layout)
+        return group
+
     def populate_audio_devices(self):
         """Populate audio device dropdown with available devices."""
         self.device_combo.clear()
@@ -351,6 +384,13 @@ class SettingsDialog(QDialog):
                 if self.device_combo.itemData(i) == device_idx:
                     self.device_combo.setCurrentIndex(i)
                     break
+
+        # Typing method
+        use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
+        if use_clipboard:
+            self.typing_paste_radio.setChecked(True)
+        else:
+            self.typing_char_radio.setChecked(True)
 
     def save_settings(self):
         """Save settings and emit signal."""
@@ -397,10 +437,14 @@ class SettingsDialog(QDialog):
 
                     model_will_download = True
 
+            # Get typing method
+            use_clipboard = self.typing_paste_radio.isChecked()
+
             # Save to config
             self.config.set_hotkey(hotkey)
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
+            self.config.set("typing", "use_clipboard_fallback", use_clipboard)
             self.config.save()
 
             # Emit signal
