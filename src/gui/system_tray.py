@@ -174,7 +174,7 @@ class SystemTrayIcon(QSystemTrayIcon):
             "Uses local Whisper AI - no internet required,\n"
             "completely private and secure.\n\n"
             "Created by William Horne\n\n"
-            "Version 1.0.0"
+            "Version 1.1.0"
         )
 
         # Create and show About dialog

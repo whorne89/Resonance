@@ -47,7 +47,7 @@ class ConfigManager:
     """Manages application configuration and settings."""
 
     DEFAULT_CONFIG = {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "hotkey": {
             "combination": "ctrl+alt+r",
             "enabled": True
