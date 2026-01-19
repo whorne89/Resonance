@@ -53,7 +53,7 @@ class ConfigManager:
             "enabled": True
         },
         "whisper": {
-            "model_size": "small",
+            "model_size": "base",
             "language": "en",
             "device": "cpu",
             "compute_type": "int8"
@@ -65,7 +65,7 @@ class ConfigManager:
         },
         "typing": {
             "speed": 0.01,
-            "use_clipboard_fallback": False
+            "use_clipboard_fallback": True
         },
         "ui": {
             "show_notifications": True,
@@ -184,7 +184,7 @@ class ConfigManager:
 
     def get_model_size(self):
         """Get Whisper model size."""
-        return self.get("whisper", "model_size", default="small")
+        return self.get("whisper", "model_size", default="base")
 
     def set_model_size(self, size):
         """Set Whisper model size."""
