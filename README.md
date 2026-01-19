@@ -25,32 +25,44 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper. Ty
 
 ### Option 1: Run from Source (Recommended)
 
+#### Windows
+
 1. Clone or download this repository
-2. Install [uv](https://docs.astral.sh/uv/)
+2. Double-click `START RESONANCE.bat`
+3. **That's it!** The batch file will automatically:
+   - Check if `uv` is installed
+   - Install `uv` automatically if needed (with popup notification)
+   - Install all Python dependencies
+   - Launch Resonance
+
+**Note**: On first run, if `uv` needs to be installed, you may need to close and re-run the batch file after installation to refresh your system PATH.
+
+#### Linux / macOS
+
+1. Clone or download this repository
+2. Install [uv](https://docs.astral.sh/uv/):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 3. **Install system audio libraries** (required for audio recording):
    - **Linux**: `sudo apt-get install libportaudio2 portaudio19-dev`
    - **macOS**: `brew install portaudio`
-   - **Windows**: No additional setup needed
 4. Install Python dependencies:
-
-```bash
-uv sync
-```
-
+   ```bash
+   uv sync
+   ```
 5. Run the application:
+   ```bash
+   uv run python src/main.py
+   ```
 
-```bash
-uv run python src/main.py
-```
+### Option 2: Build Executable (Windows)
 
-Or on Windows, simply double-click `START RESONANCE.bat`
-
-### Option 2: Build Executable
-
-1. Follow steps 1-3 above
-2. Run `BUILD RESONANCE.bat` to create a standalone .exe
-3. The executable will be in `dist\Resonance\Resonance.exe`
-4. Copy the entire `dist\Resonance` folder anywhere - no installation needed!
+1. Clone or download this repository
+2. Double-click `BUILD RESONANCE.bat`
+3. The batch file will automatically install `uv` and dependencies if needed
+4. The executable will be created at `dist\Resonance\Resonance.exe`
+5. Copy the entire `dist\Resonance` folder anywhere - no installation needed!
 
 ## Usage
 
@@ -91,6 +103,22 @@ Right-click the system tray icon and select **Settings** to configure:
 4. Transcribed text is typed into the currently focused window using keyboard simulation
 
 ## Troubleshooting
+
+### Windows: "uv is not recognized" error
+
+If the automatic `uv` installation fails, you can install it manually:
+
+**Option 1 - PowerShell (Recommended):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Option 2 - Using pip:**
+```bash
+pip install uv
+```
+
+After installing, close and reopen your command prompt or batch file to refresh the PATH.
 
 ### No transcription output
 
