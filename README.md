@@ -120,6 +120,25 @@ pip install uv
 
 After installing, close and reopen your command prompt or batch file to refresh the PATH.
 
+### OneDrive/Cloud Sync Error (Windows)
+
+If you see an error like:
+```
+failed to hardlink file... The operation is only supported on files under a cloud sync root. (os error 390)
+```
+
+This happens when the project is in a cloud-synced folder (OneDrive, Dropbox, Google Drive, etc.) which don't support hardlinks.
+
+**Solutions:**
+
+**Option 1 - Move project outside cloud folder (Recommended):**
+Move the Resonance folder to a local directory like:
+- `C:\Dev\Resonance`
+- `C:\Projects\Resonance`
+
+**Option 2 - Use copy mode (slower, uses more disk space):**
+Edit the batch files and change `uv sync` to `uv sync --link-mode=copy`
+
 ### No transcription output
 
 - Check that your microphone is working and selected in Settings
