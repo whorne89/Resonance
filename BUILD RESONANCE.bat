@@ -12,14 +12,14 @@ echo - Shows "Resonance" instead of Python
 echo - Runs without a console window
 echo - Can be double-clicked to start
 echo.
-echo Installing PyInstaller if needed...
-pip install pyinstaller
+echo Installing dependencies with uv...
+uv sync
 echo.
 echo ================================================
 echo Building executable...
 echo ================================================
 echo.
-pyinstaller build_exe.spec --clean --noconfirm
+uv run pyinstaller build_exe.spec --clean --noconfirm
 echo.
 echo ================================================
 echo BUILD COMPLETE!

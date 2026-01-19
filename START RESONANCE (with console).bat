@@ -23,7 +23,8 @@ echo ================================================
 echo.
 
 cd /d "%~dp0"
-python src\main.py
+uv sync
+uv run python src\main.py
 
 echo.
 echo ================================================

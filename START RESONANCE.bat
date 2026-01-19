@@ -1,3 +1,4 @@
 @echo off
 cd /d "%~dp0"
-start /B pythonw src\main.py
+uv sync
+start /B uv run pythonw src\main.py

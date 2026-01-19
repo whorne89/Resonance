@@ -4,7 +4,6 @@ Main entry point that orchestrates all components.
 """
 
 import sys
-import threading
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
 
