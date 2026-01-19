@@ -24,6 +24,10 @@ wheels/
 venv/
 ENV/
 env/
+.venv/
+
+# UV cache
+.uv-cache/
 
 # IDE
 .vscode/
