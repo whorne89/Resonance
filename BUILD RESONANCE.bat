@@ -12,6 +12,11 @@ echo - Shows "Resonance" instead of Python
 echo - Runs without a console window
 echo - Can be double-clicked to start
 echo.
+
+REM Check if uv is installed, auto-install if needed
+call check_uv.bat
+if %ERRORLEVEL% NEQ 0 goto :error
+
 echo Installing dependencies with uv...
 uv sync
 echo.
@@ -32,3 +37,13 @@ echo You can create a shortcut to this file and
 echo place it anywhere (Desktop, Start Menu, etc.)
 echo.
 pause
+exit /b 0
+
+:error
+echo.
+echo ================================================
+echo BUILD FAILED
+echo ================================================
+echo.
+pause
+exit /b 1

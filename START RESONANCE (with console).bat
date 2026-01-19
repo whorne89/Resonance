@@ -23,6 +23,11 @@ echo ================================================
 echo.
 
 cd /d "%~dp0"
+
+REM Check if uv is installed, auto-install if needed
+call check_uv.bat
+if %ERRORLEVEL% NEQ 0 goto :error
+
 uv sync
 uv run python src\main.py
 
@@ -31,3 +36,12 @@ echo ================================================
 echo Application stopped.
 echo ================================================
 pause
+exit /b 0
+
+:error
+echo.
+echo ================================================
+echo Failed to start Resonance
+echo ================================================
+pause
+exit /b 1
