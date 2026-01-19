@@ -18,7 +18,7 @@ call check_uv.bat
 if %ERRORLEVEL% NEQ 0 goto :error
 
 echo Installing dependencies with uv...
-uv sync
+uv sync --all-extras
 echo.
 echo ================================================
 echo Building executable...
