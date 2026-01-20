@@ -25,42 +25,33 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper. Ty
 
 ### Option 1: Run from Source (Recommended)
 
-#### Windows
-
 1. Clone or download this repository
-2. Double-click `START RESONANCE.bat`
-3. **That's it!** The batch file will automatically:
-   - Check if `uv` is installed
-   - Install `uv` automatically if needed (with popup notification)
-   - Install all Python dependencies
-   - Launch Resonance
-
-**Note**: On first run, if `uv` needs to be installed, you may need to close and re-run the batch file after installation to refresh your system PATH.
-
-#### Linux / macOS
-
-1. Clone or download this repository
-2. Install [uv](https://docs.astral.sh/uv/):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-3. **Install system audio libraries** (required for audio recording):
+2. **Install uv** (if not already installed):
+   - **Windows (PowerShell):**
+     ```powershell
+     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+     ```
+   - **Linux / macOS:**
+     ```bash
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
+   - **Alternative (any OS):**
+     ```bash
+     pip install uv
+     ```
+3. **Install system audio libraries** (Linux/macOS only):
    - **Linux**: `sudo apt-get install libportaudio2 portaudio19-dev`
    - **macOS**: `brew install portaudio`
-4. Install Python dependencies:
-   ```bash
-   uv sync
-   ```
-5. Run the application:
-   ```bash
-   uv run python src/main.py
-   ```
+   - **Windows**: No additional setup needed
+4. **Run the application:**
+   - **Windows**: Double-click `START RESONANCE.bat`
+   - **Linux / macOS**: `uv run python src/main.py`
 
 ### Option 2: Build Executable (Windows)
 
 1. Clone or download this repository
-2. Double-click `BUILD RESONANCE.bat`
-3. The batch file will automatically install `uv` and dependencies if needed
+2. Install `uv` (see step 2 above)
+3. Double-click `BUILD RESONANCE.bat`
 4. The executable will be created at `dist\Resonance\Resonance.exe`
 5. Copy the entire `dist\Resonance` folder anywhere - no installation needed!
 
@@ -106,38 +97,13 @@ Right-click the system tray icon and select **Settings** to configure:
 
 ### Windows: "uv is not recognized" error
 
-If the automatic `uv` installation fails, you can install it manually:
-
-**Option 1 - PowerShell (Recommended):**
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-**Option 2 - Using pip:**
-```bash
-pip install uv
-```
-
-After installing, close and reopen your command prompt or batch file to refresh the PATH.
+Make sure `uv` is installed (see Installation step 2) and restart your terminal/command prompt after installation to refresh your PATH.
 
 ### OneDrive/Cloud Sync Error (Windows)
 
-If you see an error like:
-```
-failed to hardlink file... The operation is only supported on files under a cloud sync root. (os error 390)
-```
+The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
 
-This happens when the project is in a cloud-synced folder (OneDrive, Dropbox, Google Drive, etc.) which don't support hardlinks.
-
-**Solutions:**
-
-**Option 1 - Move project outside cloud folder (Recommended):**
-Move the Resonance folder to a local directory like:
-- `C:\Dev\Resonance`
-- `C:\Projects\Resonance`
-
-**Option 2 - Use copy mode (slower, uses more disk space):**
-Edit the batch files and change `uv sync` to `uv sync --link-mode=copy`
+**Solution:** Edit the batch files and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
 
 ### No transcription output
 

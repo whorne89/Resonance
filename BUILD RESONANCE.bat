@@ -13,10 +13,6 @@ echo - Runs without a console window
 echo - Can be double-clicked to start
 echo.
 
-REM Check if uv is installed, auto-install if needed
-call check_uv.bat
-if %ERRORLEVEL% NEQ 0 goto :error
-
 REM Use local cache to avoid OneDrive hardlink issues
 set UV_CACHE_DIR=%~dp0.uv-cache
 
