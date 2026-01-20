@@ -31,7 +31,7 @@ if %ERRORLEVEL% NEQ 0 goto :error
 REM Use local cache to avoid OneDrive hardlink issues
 set UV_CACHE_DIR=%~dp0.uv-cache
 
-uv sync
+uv sync --no-audit
 uv run python src\main.py
 
 echo.

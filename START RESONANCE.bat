@@ -8,5 +8,5 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 REM Use local cache to avoid OneDrive hardlink issues
 set UV_CACHE_DIR=%~dp0.uv-cache
 
-uv sync
+uv sync --no-audit
 start /B uv run pythonw src\main.py
