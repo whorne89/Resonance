@@ -8,6 +8,8 @@ from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import Signal, QObject
 from pathlib import Path
 
+from utils.resource_path import get_resource_path
+
 
 class SystemTrayIcon(QSystemTrayIcon):
     """System tray icon with context menu and status updates."""
@@ -28,8 +30,8 @@ class SystemTrayIcon(QSystemTrayIcon):
 
         self.hotkey_display = hotkey_display
 
-        # Load icons
-        self.icon_dir = Path(__file__).parent.parent / "resources" / "icons"
+        # Load icons - use resource path utility for bundled EXE support
+        self.icon_dir = Path(get_resource_path("icons"))
         self.load_icons()
 
         # Set initial state

@@ -20,6 +20,15 @@ echo Installing dependencies with uv...
 uv sync --all-extras
 echo.
 echo ================================================
+echo Creating application icon...
+echo ================================================
+echo.
+uv run python create_icon.py
+if errorlevel 1 (
+    echo Warning: Failed to create icon, continuing without custom icon...
+)
+echo.
+echo ================================================
 echo Building executable...
 echo ================================================
 echo.

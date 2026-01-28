@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 
+from utils.resource_path import get_resource_path, get_app_data_path, is_bundled
+
 
 def format_hotkey_display(hotkey):
     """
@@ -78,12 +80,11 @@ class ConfigManager:
         Initialize configuration manager.
 
         Args:
-            config_file: Path to config file (default: src/resources/settings.json)
+            config_file: Path to config file (default: ~/.resonance/settings.json)
         """
         if config_file is None:
-            # Default config file location
-            base_dir = Path(__file__).parent.parent
-            self.config_file = base_dir / "resources" / "settings.json"
+            # User config file in app data directory (writable location)
+            self.config_file = Path(get_app_data_path()) / "settings.json"
         else:
             self.config_file = Path(config_file)
 
