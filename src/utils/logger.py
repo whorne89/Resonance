@@ -9,13 +9,13 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 
-def setup_logger(name="VTT", log_dir=None, level=logging.INFO):
+def setup_logger(name="Resonance", log_dir=None, level=logging.INFO):
     """
     Set up application logger with file rotation.
 
     Args:
-        name: Logger name (default "VTT")
-        log_dir: Directory for log files (default: user home/.vtt/logs/)
+        name: Logger name (default "Resonance")
+        log_dir: Directory for log files (default: user home/.resonance/logs/)
         level: Logging level (default: INFO)
 
     Returns:
@@ -31,7 +31,7 @@ def setup_logger(name="VTT", log_dir=None, level=logging.INFO):
 
     # Determine log directory
     if log_dir is None:
-        log_dir = Path.home() / ".vtt" / "logs"
+        log_dir = Path.home() / ".resonance" / "logs"
     else:
         log_dir = Path(log_dir)
 
@@ -39,7 +39,7 @@ def setup_logger(name="VTT", log_dir=None, level=logging.INFO):
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Log file path
-    log_file = log_dir / "vtt.log"
+    log_file = log_dir / "resonance.log"
 
     # Create formatter
     formatter = logging.Formatter(
@@ -68,7 +68,7 @@ def setup_logger(name="VTT", log_dir=None, level=logging.INFO):
     return logger
 
 
-def get_logger(name="VTT"):
+def get_logger(name="Resonance"):
     """
     Get or create a logger instance.
 

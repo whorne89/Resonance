@@ -99,16 +99,14 @@ class Transcriber:
         try:
             self.logger.info(f"Starting transcription of {len(audio_data)} samples...")
             # Transcribe with faster-whisper
-            # vad_filter=True uses Voice Activity Detection to filter silence
+            # Note: vad_filter disabled for bundled EXE compatibility
+            # (VAD requires silero_vad.onnx which isn't easily bundled)
             # beam_size=5 is a good balance of speed and accuracy
             segments, info = self.model.transcribe(
                 audio_data,
                 language=language,
                 beam_size=5,
-                vad_filter=True,
-                vad_parameters=dict(
-                    min_silence_duration_ms=500  # Minimum silence duration
-                )
+                vad_filter=False,
             )
 
             # Combine all segments into single text
