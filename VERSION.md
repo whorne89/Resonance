@@ -14,7 +14,7 @@ Resonance follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ## Current Version
 
-**v1.1.0** (January 18, 2026)
+**v1.1.1** (January 28, 2026)
 
 ## How to Release a New Version
 
@@ -70,6 +70,7 @@ git push origin --tags
 
 ## Version History
 
+- **v1.1.1** (2026-01-28): Fixed bundled EXE build issues (transcription, paths, branding)
 - **v1.1.0** (2026-01-18): Feature improvements and bug fixes
 - **v1.0.0** (2026-01-18): Initial release
 

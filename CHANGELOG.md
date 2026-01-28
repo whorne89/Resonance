@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-01-28
+
+### Added
+- **Resource Path Utility**: New `resource_path.py` module for proper path handling in bundled EXE
+  - Uses `sys._MEIPASS` for PyInstaller resource paths
+  - Ensures resources are found correctly when running as EXE
+- **Comprehensive Logging**: Added logging to all core modules (transcriber, keyboard_typer, hotkey_manager, audio_recorder)
+  - Logs written to `~/.resonance/logs/resonance.log`
+  - Helps diagnose issues when running as bundled EXE
+- **EXE Icon Support**: Added `create_icon.py` script to generate Windows .ico file from PNG
+  - EXE now shows the Resonance icon instead of default Python icon
+  - Build script automatically creates icon before building
+- **Windows AppUserModelID**: Set proper Windows app ID for taskbar/system tray display
+  - Shows "Resonance" instead of "Resonance.exe" or "Python"
+
+### Changed
+- **Config Location**: Settings now stored in `~/.resonance/settings.json` (writable location for bundled EXE)
+- **Models Location**: Whisper models now stored in `~/.resonance/models/` (persistent, writable)
+- **Log Location**: Logs moved from `~/.vtt/logs/vtt.log` to `~/.resonance/logs/resonance.log`
+- **Logger Name**: Changed logger name from "VTT" to "Resonance"
+
+### Fixed
+- **Bundled EXE Transcription**: Fixed transcription failing in bundled EXE due to missing VAD model
+  - Disabled VAD filter (silero_vad.onnx not easily bundled)
+  - Transcription now works correctly without VAD
+- **Path Resolution**: Fixed resources not being found when running as bundled EXE
+  - Icons, config, and other resources now load correctly
+- **Hidden Imports**: Added missing PyInstaller hidden imports
+  - Added ctranslate2, huggingface_hub, tokenizers, av, sounddevice._portaudio
+  - Added full pynput module imports (pynput.keyboard, pynput.mouse)
+- **Pillow Dependency**: Added Pillow as dev dependency for icon creation
+
 ## [1.1.0] - 2026-01-18
 
 ### Added
@@ -58,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works in any Windows application
 - Standalone executable build support
 
-[Unreleased]: https://github.com/whorne89/Resonance/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/whorne89/Resonance/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/whorne89/Resonance/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/whorne89/Resonance/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/whorne89/Resonance/releases/tag/v1.0.0
