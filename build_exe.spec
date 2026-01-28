@@ -16,6 +16,9 @@ a = Analysis(
         'PySide6.QtWidgets',
         'sounddevice',
         'pynput',
+        'pynput.keyboard._win32',
+        'pynput.mouse._win32',
+        'pyperclip',
         'core.audio_recorder',
         'core.transcriber',
         'core.keyboard_typer',
@@ -24,6 +27,7 @@ a = Analysis(
         'gui.settings_dialog',
         'utils.config',
         'utils.logger',
+        'utils.resource_path',
     ],
     hookspath=[],
     hooksconfig={},
@@ -53,6 +57,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='src\\resources\\icons\\app.ico',  # Application icon
 )
 
 coll = COLLECT(

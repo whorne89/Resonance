@@ -346,6 +346,8 @@ class VTTApplication(QObject):
 def main():
     """Main entry point."""
     app = QApplication(sys.argv)
+    app.setApplicationName("Resonance")
+    app.setApplicationDisplayName("Resonance")
     app.setQuitOnLastWindowClosed(False)  # Keep running with system tray
 
     # Create application controller

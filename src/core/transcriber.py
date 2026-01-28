@@ -8,6 +8,8 @@ import numpy as np
 import threading
 import os
 
+from utils.resource_path import get_app_data_path
+
 
 class Transcriber:
     """Handles Whisper model loading and audio transcription."""
@@ -28,19 +30,11 @@ class Transcriber:
         self.loading = False
         self._lock = threading.Lock()
 
-        # Set up local model cache directory
-        # Get the directory where this script is located at runtime
-        # Use __file__ to get the actual location of this transcriber.py file
-        this_file = os.path.abspath(__file__)
-        # Go up two directories: transcriber.py -> core -> src
-        src_dir = os.path.dirname(os.path.dirname(this_file))
-        self.models_dir = os.path.join(src_dir, "models")
+        # Set up local model cache directory in user's app data
+        # This ensures models persist and are writable even when running as bundled EXE
+        self.models_dir = get_app_data_path("models")
 
         print(f"Transcriber model directory: {self.models_dir}")
-
-        # Create models directory if it doesn't exist
-        if not os.path.exists(self.models_dir):
-            os.makedirs(self.models_dir)
 
     def load_model(self):
         """

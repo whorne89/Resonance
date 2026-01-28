@@ -25,6 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pyinstaller>=5.13.0",
+    "pillow>=10.0.0",
 ]
 
 [project.scripts]
