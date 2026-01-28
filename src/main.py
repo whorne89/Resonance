@@ -4,8 +4,19 @@ Main entry point that orchestrates all components.
 """
 
 import sys
+import ctypes
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
+
+
+def set_windows_app_id():
+    """Set Windows AppUserModelID for proper taskbar/tray display."""
+    try:
+        # This tells Windows to display "Resonance" instead of the exe name
+        app_id = "Resonance.VoiceToText.1.0"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except Exception:
+        pass  # Not on Windows or API not available
 
 from core.audio_recorder import AudioRecorder
 from core.transcriber import Transcriber
@@ -345,6 +356,9 @@ class VTTApplication(QObject):
 
 def main():
     """Main entry point."""
+    # Set Windows app ID before creating QApplication
+    set_windows_app_id()
+
     app = QApplication(sys.argv)
     app.setApplicationName("Resonance")
     app.setApplicationDisplayName("Resonance")

@@ -8,6 +8,8 @@ import numpy as np
 import queue
 import threading
 
+from utils.logger import get_logger
+
 
 class AudioRecorder:
     """Records audio from microphone using sounddevice."""
@@ -26,6 +28,7 @@ class AudioRecorder:
         self.recording = False
         self.stream = None
         self.device = None  # None = use default device
+        self.logger = get_logger()
 
     def set_device(self, device_index):
         """
@@ -60,7 +63,7 @@ class AudioRecorder:
         def callback(indata, frames, time, status):
             """Callback for sounddevice to handle incoming audio data."""
             if status:
-                print(f"Audio recording status: {status}")
+                self.logger.warning(f"Audio recording status: {status}")
             if self.recording:
                 self.audio_queue.put(indata.copy())
 

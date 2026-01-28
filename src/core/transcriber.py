@@ -9,6 +9,7 @@ import threading
 import os
 
 from utils.resource_path import get_app_data_path
+from utils.logger import get_logger
 
 
 class Transcriber:
@@ -29,12 +30,13 @@ class Transcriber:
         self.model = None
         self.loading = False
         self._lock = threading.Lock()
+        self.logger = get_logger()
 
         # Set up local model cache directory in user's app data
         # This ensures models persist and are writable even when running as bundled EXE
         self.models_dir = get_app_data_path("models")
 
-        print(f"Transcriber model directory: {self.models_dir}")
+        self.logger.info(f"Transcriber initialized, model directory: {self.models_dir}")
 
     def load_model(self):
         """
@@ -47,9 +49,9 @@ class Transcriber:
 
             self.loading = True
             try:
-                print(f"Loading Whisper model '{self.model_size}'...")
+                self.logger.info(f"Loading Whisper model '{self.model_size}' from {self.models_dir}...")
                 # Download and load model from HuggingFace
-                # Models are cached locally in src/models/
+                # Models are cached locally in ~/.resonance/models/
                 self.model = WhisperModel(
                     self.model_size,
                     device=self.device,
@@ -57,9 +59,9 @@ class Transcriber:
                     download_root=self.models_dir,
                     local_files_only=False
                 )
-                print(f"Model '{self.model_size}' loaded successfully")
+                self.logger.info(f"Model '{self.model_size}' loaded successfully")
             except Exception as e:
-                print(f"Error loading model: {e}")
+                self.logger.error(f"Error loading model: {e}", exc_info=True)
                 raise
             finally:
                 self.loading = False
@@ -95,17 +97,16 @@ class Transcriber:
             return ""
 
         try:
+            self.logger.info(f"Starting transcription of {len(audio_data)} samples...")
             # Transcribe with faster-whisper
-            # vad_filter=True uses Voice Activity Detection to filter silence
+            # Note: vad_filter disabled for bundled EXE compatibility
+            # (VAD requires silero_vad.onnx which isn't easily bundled)
             # beam_size=5 is a good balance of speed and accuracy
             segments, info = self.model.transcribe(
                 audio_data,
                 language=language,
                 beam_size=5,
-                vad_filter=True,
-                vad_parameters=dict(
-                    min_silence_duration_ms=500  # Minimum silence duration
-                )
+                vad_filter=False,
             )
 
             # Combine all segments into single text
@@ -114,10 +115,11 @@ class Transcriber:
                 text_parts.append(segment.text)
 
             result = " ".join(text_parts).strip()
+            self.logger.info(f"Transcription result: '{result}' ({len(result)} chars)")
             return result
 
         except Exception as e:
-            print(f"Transcription error: {e}")
+            self.logger.error(f"Transcription error: {e}", exc_info=True)
             return ""
 
     def is_loaded(self):
@@ -138,7 +140,7 @@ class Transcriber:
         # faster-whisper uses HuggingFace cache format: models--Systran--faster-whisper-{size}
         model_path = os.path.join(self.models_dir, f"models--Systran--faster-whisper-{model_size}")
         exists = os.path.exists(model_path) and os.path.isdir(model_path)
-        print(f"Checking model {model_size}: path={model_path}, exists={exists}")
+        self.logger.info(f"Checking model {model_size}: path={model_path}, exists={exists}")
         return exists
 
     @staticmethod

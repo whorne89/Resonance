@@ -6,6 +6,8 @@ Handles system-wide hotkey detection with press/release events.
 from pynput import keyboard
 import threading
 
+from utils.logger import get_logger
+
 
 class HotkeyManager:
     """Manages global hotkey listening with separate press/release callbacks."""
@@ -19,6 +21,7 @@ class HotkeyManager:
         self.on_release_callback = None
         self._lock = threading.Lock()
         self.current_keys = set()
+        self.logger = get_logger()
 
     def parse_hotkey_string(self, hotkey_string):
         """
@@ -54,7 +57,7 @@ class HotkeyManager:
                 try:
                     keys.add(keyboard.KeyCode.from_char(part))
                 except:
-                    print(f"Warning: Unknown key '{part}' in hotkey string")
+                    self.logger.warning(f"Unknown key '{part}' in hotkey string")
 
         return keys
 
@@ -131,7 +134,7 @@ class HotkeyManager:
                                 daemon=True
                             ).start()
             except Exception as e:
-                print(f"Error in on_key_press: {e}")
+                self.logger.error(f"Error in on_key_press: {e}", exc_info=True)
 
         def on_key_release(key):
             """Handle key release events."""
@@ -151,7 +154,7 @@ class HotkeyManager:
                                 daemon=True
                             ).start()
             except Exception as e:
-                print(f"Error in on_key_release: {e}")
+                self.logger.error(f"Error in on_key_release: {e}", exc_info=True)
 
         # Start keyboard listener
         self.listener = keyboard.Listener(
@@ -160,7 +163,7 @@ class HotkeyManager:
         )
         self.listener.start()
 
-        print(f"Registered global hotkey: {hotkey_string}")
+        self.logger.info(f"Registered global hotkey: {hotkey_string}")
 
     def unregister_hotkey(self):
         """Stop listening for hotkeys."""
