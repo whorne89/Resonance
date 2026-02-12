@@ -385,7 +385,9 @@ class SettingsDialog(QDialog):
 
     def open_dictionary(self):
         """Open the custom dictionary editor."""
-        dialog = DictionaryDialog(self.config, self)
+        dialog = DictionaryDialog(
+            self.config, self.audio_recorder, self.transcriber, self
+        )
         dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             replacements = self.config.get_dictionary_replacements()

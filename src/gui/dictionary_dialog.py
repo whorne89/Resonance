@@ -1,6 +1,8 @@
 """
 Custom dictionary dialog for Resonance.
 Allows users to map multiple misheard variations to the correct word.
+Includes "Learn from Voice" — record yourself saying a word and let Whisper
+discover what it hears, auto-adding the result as a variation.
 """
 
 from PySide6.QtWidgets import (
@@ -9,7 +11,26 @@ from PySide6.QtWidgets import (
     QHeaderView, QMessageBox, QCheckBox, QGroupBox,
     QSplitter, QWidget
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QThread, QTimer, QObject
+
+
+class LearnWorker(QObject):
+    """Worker that transcribes a short audio clip in a background thread."""
+
+    finished = Signal(str)   # transcribed text
+    error = Signal(str)
+
+    def __init__(self, transcriber, audio_data):
+        super().__init__()
+        self.transcriber = transcriber
+        self.audio_data = audio_data
+
+    def run(self):
+        try:
+            text = self.transcriber.transcribe(self.audio_data)
+            self.finished.emit(text.strip())
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class DictionaryDialog(QDialog):
@@ -17,13 +38,21 @@ class DictionaryDialog(QDialog):
 
     dictionary_changed = Signal()
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, audio_recorder, transcriber, parent=None):
         super().__init__(parent)
         self.config = config_manager
+        self.audio_recorder = audio_recorder
+        self.transcriber = transcriber
+
+        # Learn-from-voice state
+        self._is_recording = False
+        self._learn_thread = None
+        self._learn_worker = None
+        self._record_timer = None
 
         self.setWindowTitle("Custom Dictionary")
-        self.setMinimumWidth(600)
-        self.setMinimumHeight(500)
+        self.setMinimumWidth(650)
+        self.setMinimumHeight(520)
 
         self.init_ui()
         self.load_dictionary()
@@ -34,8 +63,9 @@ class DictionaryDialog(QDialog):
 
         # Description
         desc = QLabel(
-            "Add correct words on the left, then add all the wrong ways Whisper\n"
-            "might hear them on the right. Each wrong variation will be auto-corrected."
+            "Add correct words on the left. Then use \"Learn from Voice\" to say\n"
+            "the word — Whisper will show what it hears, and that gets auto-added\n"
+            "as a variation. Repeat a few times to catch different interpretations."
         )
         desc.setStyleSheet("color: gray; font-size: 11px; margin-bottom: 8px;")
         layout.addWidget(desc)
@@ -93,26 +123,49 @@ class DictionaryDialog(QDialog):
         self.variation_list = QListWidget()
         right_layout.addWidget(self.variation_list)
 
-        # Add variation
-        add_var_layout = QHBoxLayout()
+        # --- Learn from Voice section ---
+        learn_group = QGroupBox("Learn from Voice")
+        learn_layout = QVBoxLayout()
+
+        learn_desc = QLabel("Say the word into your mic — Whisper will show what it hears.")
+        learn_desc.setStyleSheet("color: gray; font-size: 10px;")
+        learn_layout.addWidget(learn_desc)
+
+        record_row = QHBoxLayout()
+        self.record_button = QPushButton("Record Sample (3s)")
+        self.record_button.clicked.connect(self.toggle_recording)
+        record_row.addWidget(self.record_button)
+
+        self.learn_status = QLabel("")
+        self.learn_status.setStyleSheet("font-size: 11px;")
+        record_row.addWidget(self.learn_status)
+        record_row.addStretch()
+
+        learn_layout.addLayout(record_row)
+        learn_group.setLayout(learn_layout)
+        right_layout.addWidget(learn_group)
+
+        # --- Manual add variation ---
+        manual_group = QGroupBox("Add Manually")
+        manual_layout = QHBoxLayout()
         self.new_variation_input = QLineEdit()
         self.new_variation_input.setPlaceholderText("e.g. IOBARE")
         self.new_variation_input.returnPressed.connect(self.add_variation)
-        add_var_layout.addWidget(self.new_variation_input)
+        manual_layout.addWidget(self.new_variation_input)
 
         self.add_variation_button = QPushButton("Add")
         self.add_variation_button.setFixedWidth(60)
         self.add_variation_button.clicked.connect(self.add_variation)
-        add_var_layout.addWidget(self.add_variation_button)
+        manual_layout.addWidget(self.add_variation_button)
+        manual_group.setLayout(manual_layout)
+        right_layout.addWidget(manual_group)
 
-        right_layout.addLayout(add_var_layout)
-
-        self.remove_variation_button = QPushButton("Remove Variation")
+        self.remove_variation_button = QPushButton("Remove Selected Variation")
         self.remove_variation_button.clicked.connect(self.remove_variation)
         right_layout.addWidget(self.remove_variation_button)
 
         splitter.addWidget(right_widget)
-        splitter.setSizes([250, 350])
+        splitter.setSizes([230, 420])
 
         layout.addWidget(splitter)
 
@@ -141,6 +194,9 @@ class DictionaryDialog(QDialog):
         self.new_variation_input.setEnabled(enabled)
         self.add_variation_button.setEnabled(enabled)
         self.remove_variation_button.setEnabled(enabled)
+        self.record_button.setEnabled(enabled)
+
+    # ---- Dictionary data management ----
 
     def load_dictionary(self):
         """Load dictionary from config."""
@@ -156,7 +212,6 @@ class DictionaryDialog(QDialog):
             if isinstance(variations, list):
                 self._data[correct_word] = list(variations)
             else:
-                # Handle old format (single string) gracefully
                 self._data[correct_word] = [variations] if variations else []
             self.word_list.addItem(correct_word)
 
@@ -185,7 +240,6 @@ class DictionaryDialog(QDialog):
         if not word:
             return
 
-        # Check for duplicate
         for i in range(self.word_list.count()):
             if self.word_list.item(i).text().lower() == word.lower():
                 QMessageBox.warning(
@@ -198,7 +252,6 @@ class DictionaryDialog(QDialog):
         self.word_list.addItem(word)
         self.word_list.setCurrentRow(self.word_list.count() - 1)
         self.new_word_input.clear()
-        self.new_variation_input.setFocus()
 
     def remove_word(self):
         """Remove the selected correct word and all its variations."""
@@ -217,8 +270,36 @@ class DictionaryDialog(QDialog):
             del self._data[word]
             self.word_list.takeItem(self.word_list.row(current))
 
+    def _try_add_variation(self, correct_word, variation):
+        """
+        Try to add a variation for a correct word.
+        Returns True if added, False if skipped (duplicate, conflict, same word).
+        """
+        variation = variation.strip()
+        if not variation:
+            return False
+
+        # Skip if it's the correct word itself
+        if variation.lower() == correct_word.lower():
+            return False
+
+        # Skip duplicates for this word
+        variations = self._data.get(correct_word, [])
+        if any(v.lower() == variation.lower() for v in variations):
+            return False
+
+        # Skip if used by another word
+        for other_word, other_vars in self._data.items():
+            if other_word == correct_word:
+                continue
+            if any(v.lower() == variation.lower() for v in other_vars):
+                return False
+
+        self._data[correct_word].append(variation)
+        return True
+
     def add_variation(self):
-        """Add a wrong variation for the currently selected correct word."""
+        """Add a wrong variation manually for the currently selected correct word."""
         current_word_item = self.word_list.currentItem()
         if not current_word_item:
             return
@@ -229,7 +310,6 @@ class DictionaryDialog(QDialog):
 
         correct_word = current_word_item.text()
 
-        # Don't allow adding the correct word itself as a variation
         if variation.lower() == correct_word.lower():
             QMessageBox.warning(
                 self, "Same Word",
@@ -237,7 +317,6 @@ class DictionaryDialog(QDialog):
             )
             return
 
-        # Check for duplicate in this word's variations
         variations = self._data.get(correct_word, [])
         if any(v.lower() == variation.lower() for v in variations):
             QMessageBox.warning(
@@ -246,7 +325,6 @@ class DictionaryDialog(QDialog):
             )
             return
 
-        # Check if this variation is already used by another correct word
         for other_word, other_vars in self._data.items():
             if other_word == correct_word:
                 continue
@@ -275,6 +353,139 @@ class DictionaryDialog(QDialog):
         self._data[correct_word].remove(variation)
         self.variation_list.takeItem(self.variation_list.row(var_item))
 
+    # ---- Learn from Voice ----
+
+    def toggle_recording(self):
+        """Start or stop a learning recording."""
+        if self._is_recording:
+            self._stop_recording()
+        else:
+            self._start_recording()
+
+    def _start_recording(self):
+        """Start recording a voice sample."""
+        current_word_item = self.word_list.currentItem()
+        if not current_word_item:
+            QMessageBox.warning(
+                self, "No Word Selected",
+                "Select or add a correct word first, then record."
+            )
+            return
+
+        try:
+            self.audio_recorder.start_recording()
+        except Exception as e:
+            self.learn_status.setText(f"Mic error: {e}")
+            self.learn_status.setStyleSheet("color: red; font-size: 11px;")
+            return
+
+        self._is_recording = True
+        self.record_button.setText("Stop Recording")
+        self.record_button.setStyleSheet("background-color: #e74c3c; color: white;")
+        self.learn_status.setText("Listening... say the word now")
+        self.learn_status.setStyleSheet("color: #e74c3c; font-weight: bold; font-size: 11px;")
+
+        # Auto-stop after 3 seconds
+        self._record_timer = QTimer(self)
+        self._record_timer.setSingleShot(True)
+        self._record_timer.timeout.connect(self._stop_recording)
+        self._record_timer.start(3000)
+
+    def _stop_recording(self):
+        """Stop recording and transcribe the sample."""
+        if not self._is_recording:
+            return
+
+        self._is_recording = False
+
+        if self._record_timer:
+            self._record_timer.stop()
+            self._record_timer = None
+
+        self.record_button.setText("Record Sample (3s)")
+        self.record_button.setStyleSheet("")
+        self.record_button.setEnabled(False)
+
+        audio_data = self.audio_recorder.stop_recording()
+
+        if audio_data is None or len(audio_data) == 0:
+            self.learn_status.setText("No audio captured — try again")
+            self.learn_status.setStyleSheet("color: orange; font-size: 11px;")
+            self.record_button.setEnabled(True)
+            return
+
+        self.learn_status.setText("Transcribing...")
+        self.learn_status.setStyleSheet("color: #2980b9; font-size: 11px;")
+
+        # Transcribe in background thread
+        self._learn_thread = QThread()
+        self._learn_worker = LearnWorker(self.transcriber, audio_data)
+        self._learn_worker.moveToThread(self._learn_thread)
+
+        self._learn_thread.started.connect(self._learn_worker.run)
+        self._learn_worker.finished.connect(self._on_learn_result)
+        self._learn_worker.error.connect(self._on_learn_error)
+        self._learn_worker.finished.connect(
+            self._cleanup_learn_thread, Qt.ConnectionType.QueuedConnection
+        )
+        self._learn_worker.error.connect(
+            self._cleanup_learn_thread, Qt.ConnectionType.QueuedConnection
+        )
+
+        self._learn_thread.start()
+
+    def _on_learn_result(self, text):
+        """Handle transcription result from a voice learning sample."""
+        self.record_button.setEnabled(True)
+
+        current_word_item = self.word_list.currentItem()
+        if not current_word_item:
+            self.learn_status.setText("No word selected")
+            self.learn_status.setStyleSheet("color: orange; font-size: 11px;")
+            return
+
+        if not text:
+            self.learn_status.setText("Nothing detected — try again")
+            self.learn_status.setStyleSheet("color: orange; font-size: 11px;")
+            return
+
+        correct_word = current_word_item.text()
+
+        # If Whisper heard the correct word exactly, no variation needed
+        if text.strip().lower() == correct_word.lower():
+            self.learn_status.setText(f"Whisper heard it correctly: \"{text}\"")
+            self.learn_status.setStyleSheet("color: green; font-weight: bold; font-size: 11px;")
+            return
+
+        # Try to add it as a variation
+        added = self._try_add_variation(correct_word, text)
+        if added:
+            self.variation_list.addItem(text)
+            self.learn_status.setText(f"Added: \"{text}\"")
+            self.learn_status.setStyleSheet("color: green; font-weight: bold; font-size: 11px;")
+        else:
+            self.learn_status.setText(f"Already known: \"{text}\"")
+            self.learn_status.setStyleSheet("color: gray; font-size: 11px;")
+
+    def _on_learn_error(self, error_msg):
+        """Handle transcription error during voice learning."""
+        self.record_button.setEnabled(True)
+        self.learn_status.setText(f"Error: {error_msg}")
+        self.learn_status.setStyleSheet("color: red; font-size: 11px;")
+
+    def _cleanup_learn_thread(self, _result=None):
+        """Clean up the background transcription thread."""
+        if self._learn_thread:
+            self._learn_thread.quit()
+            self._learn_thread.wait(2000)
+            self._learn_thread.deleteLater()
+            self._learn_thread = None
+        if self._learn_worker:
+            self._learn_worker.deleteLater()
+            self._learn_worker = None
+
+    # ---- Save ----
+
     def save_dictionary(self):
         """Save dictionary to config."""
         # Filter out words with no variations
@@ -296,3 +507,10 @@ class DictionaryDialog(QDialog):
             f"Saved {len(replacements)} word(s) with {total_variations} total variation(s)."
         )
         self.accept()
+
+    def closeEvent(self, event):
+        """Clean up on close."""
+        if self._is_recording:
+            self.audio_recorder.stop_recording()
+        self._cleanup_learn_thread()
+        event.accept()
