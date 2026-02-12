@@ -197,10 +197,15 @@ class VTTApplication(QObject):
         self.transcription_worker.finished.connect(self.on_transcription_complete)
         self.transcription_worker.error.connect(self.on_transcription_error)
 
-        # CRITICAL: Quit and cleanup must happen BEFORE the completion handlers
-        # Otherwise the typing in the completion handler can block the event loop
-        self.transcription_worker.finished.connect(lambda: self._quit_transcription_thread())
-        self.transcription_worker.error.connect(lambda: self._quit_transcription_thread())
+        # Cleanup must happen after completion/error handlers finish.
+        # Use QueuedConnection to ensure these run on the main thread (not the worker thread),
+        # which avoids "QObject::startTimer: Timers can only be used with threads started with QThread".
+        self.transcription_worker.finished.connect(
+            self._quit_transcription_thread, Qt.ConnectionType.QueuedConnection
+        )
+        self.transcription_worker.error.connect(
+            self._quit_transcription_thread, Qt.ConnectionType.QueuedConnection
+        )
 
         # Start thread
         self.transcription_thread.start()
@@ -296,7 +301,7 @@ class VTTApplication(QObject):
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription error handler finished, cleanup will occur via signal")
 
-    def _quit_transcription_thread(self):
+    def _quit_transcription_thread(self, _result=None):
         """Immediately quit and cleanup the transcription thread."""
         self.logger.info("Quitting transcription thread")
         if self.transcription_thread:
@@ -344,8 +349,8 @@ class VTTApplication(QObject):
             dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
 
             self.logger.info("Showing settings dialog as modal")
-            # Use exec_() to show as modal dialog - this FORCES it to appear
-            dialog.exec_()
+            # Use exec() to show as modal dialog - this FORCES it to appear
+            dialog.exec()
 
         except Exception as e:
             self.logger.error(f"Failed to show settings dialog: {e}")

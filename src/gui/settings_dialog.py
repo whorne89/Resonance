@@ -525,7 +525,7 @@ class SettingsDialog(QDialog):
 
         # Create audio meter dialog
         meter_dialog = AudioLevelMeterDialog(self.audio_recorder, self)
-        meter_dialog.exec_()
+        meter_dialog.exec()
 
 
 class AudioLevelMeterDialog(QDialog):

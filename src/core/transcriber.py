@@ -3,10 +3,14 @@ Whisper transcription module using faster-whisper.
 Provides speech-to-text transcription with optimized performance.
 """
 
-from faster_whisper import WhisperModel
 import numpy as np
 import threading
 import os
+
+# Suppress HuggingFace symlinks warning on Windows
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+from faster_whisper import WhisperModel
 
 from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
