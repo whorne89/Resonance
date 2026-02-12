@@ -3,6 +3,7 @@ Resonance - Voice to Text Application
 Main entry point that orchestrates all components.
 """
 
+import re
 import sys
 import ctypes
 from PySide6.QtWidgets import QApplication
@@ -208,6 +209,33 @@ class VTTApplication(QObject):
         # Schedule cleanup for 30 seconds after start as safety net
         QTimer.singleShot(30000, self.force_cleanup_if_stuck)
 
+    def apply_dictionary(self, text):
+        """
+        Apply custom dictionary replacements to transcribed text.
+
+        Performs case-insensitive word matching and replaces with the
+        user-specified correction.
+
+        Args:
+            text: Raw transcribed text
+
+        Returns:
+            Text with dictionary replacements applied
+        """
+        if not self.config.get_dictionary_enabled():
+            return text
+
+        replacements = self.config.get_dictionary_replacements()
+        if not replacements:
+            return text
+
+        for wrong, correct in replacements.items():
+            # Case-insensitive word-boundary replacement
+            pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+            text = pattern.sub(correct, text)
+
+        return text
+
     def on_transcription_complete(self, text):
         """
         Called when transcription is complete.
@@ -218,6 +246,13 @@ class VTTApplication(QObject):
         self.logger.info(f"Transcription complete: '{text}'")
 
         try:
+            # Apply custom dictionary replacements
+            if text:
+                original = text
+                text = self.apply_dictionary(text)
+                if text != original:
+                    self.logger.info(f"Dictionary applied: '{original}' -> '{text}'")
+
             # Type the text
             if text:
                 try:

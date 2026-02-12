@@ -72,6 +72,10 @@ class ConfigManager:
         "ui": {
             "show_notifications": True,
             "minimize_to_tray": True
+        },
+        "dictionary": {
+            "enabled": True,
+            "replacements": {}
         }
     }
 
@@ -235,6 +239,22 @@ class ConfigManager:
                 merged[key] = value
 
         return merged
+
+    def get_dictionary_enabled(self):
+        """Get whether custom dictionary is enabled."""
+        return self.get("dictionary", "enabled", default=True)
+
+    def set_dictionary_enabled(self, enabled):
+        """Set whether custom dictionary is enabled."""
+        self.set("dictionary", "enabled", value=enabled)
+
+    def get_dictionary_replacements(self):
+        """Get dictionary replacements mapping (wrong word -> correct word)."""
+        return self.get("dictionary", "replacements", default={})
+
+    def set_dictionary_replacements(self, replacements):
+        """Set dictionary replacements mapping."""
+        self.set("dictionary", "replacements", value=replacements)
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""

@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, QTimer, Qt
 from PySide6.QtGui import QPalette, QColor, QKeyEvent
 
+from gui.dictionary_dialog import DictionaryDialog
+
 
 class HotkeyCaptureDialog(QDialog):
     """Dialog for capturing hotkey combinations."""
@@ -220,6 +222,10 @@ class SettingsDialog(QDialog):
         typing_group = self.create_typing_group()
         layout.addWidget(typing_group)
 
+        # Dictionary settings
+        dictionary_group = self.create_dictionary_group()
+        layout.addWidget(dictionary_group)
+
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -346,6 +352,43 @@ class SettingsDialog(QDialog):
 
         group.setLayout(layout)
         return group
+
+    def create_dictionary_group(self):
+        """Create custom dictionary configuration group."""
+        group = QGroupBox("Custom Dictionary")
+        layout = QVBoxLayout()
+
+        info_label = QLabel(
+            "Add words that Resonance commonly gets wrong to improve accuracy."
+        )
+        info_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(info_label)
+
+        # Count label + button
+        button_layout = QHBoxLayout()
+
+        replacements = self.config.get_dictionary_replacements()
+        self.dict_count_label = QLabel(f"{len(replacements)} word(s) in dictionary")
+        button_layout.addWidget(self.dict_count_label)
+
+        button_layout.addStretch()
+
+        self.dict_button = QPushButton("Edit Dictionary...")
+        self.dict_button.clicked.connect(self.open_dictionary)
+        button_layout.addWidget(self.dict_button)
+
+        layout.addLayout(button_layout)
+
+        group.setLayout(layout)
+        return group
+
+    def open_dictionary(self):
+        """Open the custom dictionary editor."""
+        dialog = DictionaryDialog(self.config, self)
+        dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            replacements = self.config.get_dictionary_replacements()
+            self.dict_count_label.setText(f"{len(replacements)} word(s) in dictionary")
 
     def populate_audio_devices(self):
         """Populate audio device dropdown with available devices."""

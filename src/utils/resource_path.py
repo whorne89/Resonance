@@ -8,6 +8,24 @@ import sys
 from pathlib import Path
 
 
+def _get_app_root():
+    """
+    Get the root directory of the application.
+
+    When running as a bundled EXE, returns the directory containing the .exe.
+    When running as a script, returns the project root (parent of src/).
+
+    Returns:
+        Path to the application root directory
+    """
+    if hasattr(sys, '_MEIPASS'):
+        # Running as bundled exe - use the directory where the .exe lives
+        return Path(os.path.dirname(sys.executable))
+    else:
+        # Running as script - src/utils/resource_path.py -> go up two levels to project root
+        return Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+
 def get_resource_path(relative_path=""):
     """
     Get absolute path to a resource, works for dev and PyInstaller bundle.
@@ -37,7 +55,8 @@ def get_app_data_path(subdir=""):
     """
     Get path to application data directory (for user-writable data like models).
 
-    Uses ~/.resonance/ on all platforms for persistent storage.
+    Stores data relative to the application directory so everything stays
+    on the same drive as the application.
 
     Args:
         subdir: Subdirectory within app data (e.g., "models", "cache")
@@ -45,7 +64,7 @@ def get_app_data_path(subdir=""):
     Returns:
         Absolute path to the app data directory
     """
-    app_data = Path.home() / ".resonance"
+    app_data = _get_app_root() / ".resonance"
 
     if subdir:
         path = app_data / subdir

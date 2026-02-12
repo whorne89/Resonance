@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+from utils.resource_path import get_app_data_path
+
 
 def setup_logger(name="Resonance", log_dir=None, level=logging.INFO):
     """
@@ -15,7 +17,7 @@ def setup_logger(name="Resonance", log_dir=None, level=logging.INFO):
 
     Args:
         name: Logger name (default "Resonance")
-        log_dir: Directory for log files (default: user home/.resonance/logs/)
+        log_dir: Directory for log files (default: <app_root>/.resonance/logs/)
         level: Logging level (default: INFO)
 
     Returns:
@@ -31,7 +33,7 @@ def setup_logger(name="Resonance", log_dir=None, level=logging.INFO):
 
     # Determine log directory
     if log_dir is None:
-        log_dir = Path.home() / ".resonance" / "logs"
+        log_dir = Path(get_app_data_path("logs"))
     else:
         log_dir = Path(log_dir)
 
