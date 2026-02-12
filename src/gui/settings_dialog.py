@@ -368,7 +368,8 @@ class SettingsDialog(QDialog):
         button_layout = QHBoxLayout()
 
         replacements = self.config.get_dictionary_replacements()
-        self.dict_count_label = QLabel(f"{len(replacements)} word(s) in dictionary")
+        total_vars = sum(len(v) for v in replacements.values() if isinstance(v, list))
+        self.dict_count_label = QLabel(f"{len(replacements)} word(s), {total_vars} variation(s)")
         button_layout.addWidget(self.dict_count_label)
 
         button_layout.addStretch()
@@ -388,7 +389,8 @@ class SettingsDialog(QDialog):
         dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             replacements = self.config.get_dictionary_replacements()
-            self.dict_count_label.setText(f"{len(replacements)} word(s) in dictionary")
+            total_vars = sum(len(v) for v in replacements.values() if isinstance(v, list))
+            self.dict_count_label.setText(f"{len(replacements)} word(s), {total_vars} variation(s)")
 
     def populate_audio_devices(self):
         """Populate audio device dropdown with available devices."""

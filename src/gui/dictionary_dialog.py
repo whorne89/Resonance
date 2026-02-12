@@ -1,18 +1,19 @@
 """
 Custom dictionary dialog for Resonance.
-Allows users to add word replacements to correct common transcription errors.
+Allows users to map multiple misheard variations to the correct word.
 """
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QCheckBox, QGroupBox
+    QPushButton, QLineEdit, QListWidget, QListWidgetItem,
+    QHeaderView, QMessageBox, QCheckBox, QGroupBox,
+    QSplitter, QWidget
 )
 from PySide6.QtCore import Signal, Qt
 
 
 class DictionaryDialog(QDialog):
-    """Dialog for managing custom word replacements."""
+    """Dialog for managing custom word replacements (many-to-one)."""
 
     dictionary_changed = Signal()
 
@@ -21,8 +22,8 @@ class DictionaryDialog(QDialog):
         self.config = config_manager
 
         self.setWindowTitle("Custom Dictionary")
-        self.setMinimumWidth(550)
-        self.setMinimumHeight(450)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
 
         self.init_ui()
         self.load_dictionary()
@@ -33,8 +34,8 @@ class DictionaryDialog(QDialog):
 
         # Description
         desc = QLabel(
-            "Add words that Resonance commonly gets wrong. When the wrong word\n"
-            "is detected in a transcription, it will be replaced with your correction."
+            "Add correct words on the left, then add all the wrong ways Whisper\n"
+            "might hear them on the right. Each wrong variation will be auto-corrected."
         )
         desc.setStyleSheet("color: gray; font-size: 11px; margin-bottom: 8px;")
         layout.addWidget(desc)
@@ -44,53 +45,76 @@ class DictionaryDialog(QDialog):
         self.enabled_checkbox.setChecked(True)
         layout.addWidget(self.enabled_checkbox)
 
-        # Table of replacements
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Whisper Hears", "Replace With"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        layout.addWidget(self.table)
+        # Main splitter: left = correct words, right = variations for selected word
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Add new entry section
-        add_group = QGroupBox("Add New Entry")
-        add_layout = QHBoxLayout()
+        # --- Left panel: Correct words ---
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.wrong_input = QLineEdit()
-        self.wrong_input.setPlaceholderText("Wrong word (e.g. IOBARE)")
-        add_layout.addWidget(self.wrong_input)
+        left_label = QLabel("Correct Words")
+        left_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        left_layout.addWidget(left_label)
 
-        arrow_label = QLabel("->")
-        arrow_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-        arrow_label.setFixedWidth(30)
-        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        add_layout.addWidget(arrow_label)
+        self.word_list = QListWidget()
+        self.word_list.currentItemChanged.connect(self.on_word_selected)
+        left_layout.addWidget(self.word_list)
 
-        self.correct_input = QLineEdit()
-        self.correct_input.setPlaceholderText("Correct word (e.g. iObeya)")
-        add_layout.addWidget(self.correct_input)
+        # Add correct word
+        add_word_layout = QHBoxLayout()
+        self.new_word_input = QLineEdit()
+        self.new_word_input.setPlaceholderText("e.g. iObeya")
+        self.new_word_input.returnPressed.connect(self.add_word)
+        add_word_layout.addWidget(self.new_word_input)
 
-        self.add_button = QPushButton("Add")
-        self.add_button.clicked.connect(self.add_entry)
-        self.add_button.setFixedWidth(70)
-        add_layout.addWidget(self.add_button)
+        self.add_word_button = QPushButton("Add")
+        self.add_word_button.setFixedWidth(60)
+        self.add_word_button.clicked.connect(self.add_word)
+        add_word_layout.addWidget(self.add_word_button)
 
-        add_group.setLayout(add_layout)
-        layout.addWidget(add_group)
+        left_layout.addLayout(add_word_layout)
 
-        # Allow Enter key to add entry
-        self.correct_input.returnPressed.connect(self.add_entry)
-        self.wrong_input.returnPressed.connect(lambda: self.correct_input.setFocus())
+        self.remove_word_button = QPushButton("Remove Word")
+        self.remove_word_button.clicked.connect(self.remove_word)
+        left_layout.addWidget(self.remove_word_button)
 
-        # Remove button
-        remove_layout = QHBoxLayout()
-        remove_layout.addStretch()
+        splitter.addWidget(left_widget)
 
-        self.remove_button = QPushButton("Remove Selected")
-        self.remove_button.clicked.connect(self.remove_entry)
-        remove_layout.addWidget(self.remove_button)
+        # --- Right panel: Wrong variations for selected word ---
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addLayout(remove_layout)
+        self.variations_label = QLabel("Wrong Variations")
+        self.variations_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        right_layout.addWidget(self.variations_label)
+
+        self.variation_list = QListWidget()
+        right_layout.addWidget(self.variation_list)
+
+        # Add variation
+        add_var_layout = QHBoxLayout()
+        self.new_variation_input = QLineEdit()
+        self.new_variation_input.setPlaceholderText("e.g. IOBARE")
+        self.new_variation_input.returnPressed.connect(self.add_variation)
+        add_var_layout.addWidget(self.new_variation_input)
+
+        self.add_variation_button = QPushButton("Add")
+        self.add_variation_button.setFixedWidth(60)
+        self.add_variation_button.clicked.connect(self.add_variation)
+        add_var_layout.addWidget(self.add_variation_button)
+
+        right_layout.addLayout(add_var_layout)
+
+        self.remove_variation_button = QPushButton("Remove Variation")
+        self.remove_variation_button.clicked.connect(self.remove_variation)
+        right_layout.addWidget(self.remove_variation_button)
+
+        splitter.addWidget(right_widget)
+        splitter.setSizes([250, 350])
+
+        layout.addWidget(splitter)
 
         # Save / Cancel buttons
         button_layout = QHBoxLayout()
@@ -108,80 +132,157 @@ class DictionaryDialog(QDialog):
 
         self.setLayout(layout)
 
+        # Disable right panel until a word is selected
+        self._set_variations_enabled(False)
+
+    def _set_variations_enabled(self, enabled):
+        """Enable or disable the variations panel."""
+        self.variation_list.setEnabled(enabled)
+        self.new_variation_input.setEnabled(enabled)
+        self.add_variation_button.setEnabled(enabled)
+        self.remove_variation_button.setEnabled(enabled)
+
     def load_dictionary(self):
-        """Load dictionary from config into the table."""
+        """Load dictionary from config."""
         self.enabled_checkbox.setChecked(self.config.get_dictionary_enabled())
 
         replacements = self.config.get_dictionary_replacements()
-        self.table.setRowCount(0)
+        self.word_list.clear()
 
-        for wrong, correct in replacements.items():
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(wrong))
-            self.table.setItem(row, 1, QTableWidgetItem(correct))
+        # Store variations data keyed by correct word
+        self._data = {}
 
-    def add_entry(self):
-        """Add a new dictionary entry from the input fields."""
-        wrong = self.wrong_input.text().strip()
-        correct = self.correct_input.text().strip()
+        for correct_word, variations in replacements.items():
+            if isinstance(variations, list):
+                self._data[correct_word] = list(variations)
+            else:
+                # Handle old format (single string) gracefully
+                self._data[correct_word] = [variations] if variations else []
+            self.word_list.addItem(correct_word)
 
-        if not wrong or not correct:
-            QMessageBox.warning(
-                self, "Missing Input",
-                "Please enter both the wrong word and the correct replacement."
-            )
+        if self.word_list.count() > 0:
+            self.word_list.setCurrentRow(0)
+
+    def on_word_selected(self, current, previous):
+        """Called when a correct word is selected — show its variations."""
+        if current is None:
+            self.variation_list.clear()
+            self.variations_label.setText("Wrong Variations")
+            self._set_variations_enabled(False)
             return
 
-        if wrong.lower() == correct.lower():
-            QMessageBox.warning(
-                self, "Same Word",
-                "The wrong word and correction are the same."
-            )
+        word = current.text()
+        self.variations_label.setText(f"Wrong Variations for \"{word}\"")
+        self._set_variations_enabled(True)
+
+        self.variation_list.clear()
+        for var in self._data.get(word, []):
+            self.variation_list.addItem(var)
+
+    def add_word(self):
+        """Add a new correct word."""
+        word = self.new_word_input.text().strip()
+        if not word:
             return
 
         # Check for duplicate
-        for row in range(self.table.rowCount()):
-            existing = self.table.item(row, 0).text()
-            if existing.lower() == wrong.lower():
+        for i in range(self.word_list.count()):
+            if self.word_list.item(i).text().lower() == word.lower():
                 QMessageBox.warning(
-                    self, "Duplicate Entry",
-                    f"'{wrong}' is already in the dictionary."
+                    self, "Duplicate",
+                    f"\"{word}\" is already in the dictionary."
                 )
                 return
 
-        # Add to table
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(wrong))
-        self.table.setItem(row, 1, QTableWidgetItem(correct))
+        self._data[word] = []
+        self.word_list.addItem(word)
+        self.word_list.setCurrentRow(self.word_list.count() - 1)
+        self.new_word_input.clear()
+        self.new_variation_input.setFocus()
 
-        # Clear inputs
-        self.wrong_input.clear()
-        self.correct_input.clear()
-        self.wrong_input.setFocus()
+    def remove_word(self):
+        """Remove the selected correct word and all its variations."""
+        current = self.word_list.currentItem()
+        if not current:
+            QMessageBox.warning(self, "No Selection", "Select a word to remove.")
+            return
 
-    def remove_entry(self):
-        """Remove the selected dictionary entry."""
-        selected = self.table.selectedItems()
-        if not selected:
+        word = current.text()
+        reply = QMessageBox.question(
+            self, "Remove Word",
+            f"Remove \"{word}\" and all its variations?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            del self._data[word]
+            self.word_list.takeItem(self.word_list.row(current))
+
+    def add_variation(self):
+        """Add a wrong variation for the currently selected correct word."""
+        current_word_item = self.word_list.currentItem()
+        if not current_word_item:
+            return
+
+        variation = self.new_variation_input.text().strip()
+        if not variation:
+            return
+
+        correct_word = current_word_item.text()
+
+        # Don't allow adding the correct word itself as a variation
+        if variation.lower() == correct_word.lower():
             QMessageBox.warning(
-                self, "No Selection",
-                "Please select an entry to remove."
+                self, "Same Word",
+                "The variation can't be the same as the correct word."
             )
             return
 
-        row = selected[0].row()
-        self.table.removeRow(row)
+        # Check for duplicate in this word's variations
+        variations = self._data.get(correct_word, [])
+        if any(v.lower() == variation.lower() for v in variations):
+            QMessageBox.warning(
+                self, "Duplicate",
+                f"\"{variation}\" is already listed as a variation."
+            )
+            return
+
+        # Check if this variation is already used by another correct word
+        for other_word, other_vars in self._data.items():
+            if other_word == correct_word:
+                continue
+            if any(v.lower() == variation.lower() for v in other_vars):
+                QMessageBox.warning(
+                    self, "Conflict",
+                    f"\"{variation}\" is already a variation of \"{other_word}\"."
+                )
+                return
+
+        self._data[correct_word].append(variation)
+        self.variation_list.addItem(variation)
+        self.new_variation_input.clear()
+        self.new_variation_input.setFocus()
+
+    def remove_variation(self):
+        """Remove the selected variation."""
+        current_word_item = self.word_list.currentItem()
+        var_item = self.variation_list.currentItem()
+        if not current_word_item or not var_item:
+            QMessageBox.warning(self, "No Selection", "Select a variation to remove.")
+            return
+
+        correct_word = current_word_item.text()
+        variation = var_item.text()
+        self._data[correct_word].remove(variation)
+        self.variation_list.takeItem(self.variation_list.row(var_item))
 
     def save_dictionary(self):
         """Save dictionary to config."""
-        replacements = {}
-        for row in range(self.table.rowCount()):
-            wrong = self.table.item(row, 0).text().strip()
-            correct = self.table.item(row, 1).text().strip()
-            if wrong and correct:
-                replacements[wrong] = correct
+        # Filter out words with no variations
+        replacements = {
+            word: variations
+            for word, variations in self._data.items()
+            if variations
+        }
 
         self.config.set_dictionary_enabled(self.enabled_checkbox.isChecked())
         self.config.set_dictionary_replacements(replacements)
@@ -189,8 +290,9 @@ class DictionaryDialog(QDialog):
 
         self.dictionary_changed.emit()
 
+        total_variations = sum(len(v) for v in replacements.values())
         QMessageBox.information(
             self, "Dictionary Saved",
-            f"Custom dictionary saved with {len(replacements)} entries."
+            f"Saved {len(replacements)} word(s) with {total_variations} total variation(s)."
         )
         self.accept()

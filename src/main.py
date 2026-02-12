@@ -218,8 +218,8 @@ class VTTApplication(QObject):
         """
         Apply custom dictionary replacements to transcribed text.
 
-        Performs case-insensitive word matching and replaces with the
-        user-specified correction.
+        The dictionary maps correct_word -> [list of wrong variations].
+        Each variation is replaced case-insensitively with the correct word.
 
         Args:
             text: Raw transcribed text
@@ -234,10 +234,12 @@ class VTTApplication(QObject):
         if not replacements:
             return text
 
-        for wrong, correct in replacements.items():
-            # Case-insensitive word-boundary replacement
-            pattern = re.compile(re.escape(wrong), re.IGNORECASE)
-            text = pattern.sub(correct, text)
+        for correct_word, wrong_variations in replacements.items():
+            if not isinstance(wrong_variations, list):
+                continue
+            for wrong in wrong_variations:
+                pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+                text = pattern.sub(correct_word, text)
 
         return text
 
