@@ -328,7 +328,7 @@ class VTTApplication(QObject):
 
                 result.append(best_match + trailing)
                 self.logger.info(
-                    f"Fuzzy match: '{' '.join(words[i:i + best_window])}' → "
+                    f"Fuzzy match: '{' '.join(words[i:i + best_window])}' -> "
                     f"'{best_match}' (similarity: {best_ratio:.2f})"
                 )
                 i += best_window
