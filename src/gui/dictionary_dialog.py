@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QListWidget, QListWidgetItem,
     QHeaderView, QMessageBox, QCheckBox, QGroupBox,
-    QSplitter, QWidget
+    QSplitter, QWidget, QComboBox
 )
 from PySide6.QtCore import Signal, Qt, QThread, QTimer, QObject
 
@@ -74,6 +74,33 @@ class DictionaryDialog(QDialog):
         self.enabled_checkbox = QCheckBox("Enable custom dictionary")
         self.enabled_checkbox.setChecked(True)
         layout.addWidget(self.enabled_checkbox)
+
+        # Fuzzy matching controls
+        fuzzy_layout = QHBoxLayout()
+        self.fuzzy_checkbox = QCheckBox("Fuzzy matching")
+        self.fuzzy_checkbox.setToolTip(
+            "Automatically catch similar-sounding variations that aren't\n"
+            "in the exact list. Whisper often spells the same word differently\n"
+            "depending on sentence context — fuzzy matching handles that."
+        )
+        self.fuzzy_checkbox.setChecked(True)
+        fuzzy_layout.addWidget(self.fuzzy_checkbox)
+
+        fuzzy_layout.addWidget(QLabel("Sensitivity:"))
+        self.fuzzy_sensitivity = QComboBox()
+        self.fuzzy_sensitivity.addItem("Low", 0.85)
+        self.fuzzy_sensitivity.addItem("Medium", 0.75)
+        self.fuzzy_sensitivity.addItem("High", 0.65)
+        self.fuzzy_sensitivity.setCurrentIndex(1)  # Default: Medium
+        self.fuzzy_sensitivity.setToolTip(
+            "Low = only very close matches (fewer corrections, fewer false positives)\n"
+            "Medium = balanced (recommended)\n"
+            "High = more aggressive matching (more corrections, risk of false positives)"
+        )
+        self.fuzzy_sensitivity.setFixedWidth(100)
+        fuzzy_layout.addWidget(self.fuzzy_sensitivity)
+        fuzzy_layout.addStretch()
+        layout.addLayout(fuzzy_layout)
 
         # Main splitter: left = correct words, right = variations for selected word
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -201,6 +228,15 @@ class DictionaryDialog(QDialog):
     def load_dictionary(self):
         """Load dictionary from config."""
         self.enabled_checkbox.setChecked(self.config.get_dictionary_enabled())
+
+        # Load fuzzy matching settings
+        self.fuzzy_checkbox.setChecked(self.config.get_dictionary_fuzzy_enabled())
+        saved_threshold = self.config.get_dictionary_fuzzy_threshold()
+        # Find the combo item closest to the saved threshold
+        for idx in range(self.fuzzy_sensitivity.count()):
+            if abs(self.fuzzy_sensitivity.itemData(idx) - saved_threshold) < 0.01:
+                self.fuzzy_sensitivity.setCurrentIndex(idx)
+                break
 
         replacements = self.config.get_dictionary_replacements()
         self.word_list.clear()
@@ -497,6 +533,8 @@ class DictionaryDialog(QDialog):
 
         self.config.set_dictionary_enabled(self.enabled_checkbox.isChecked())
         self.config.set_dictionary_replacements(replacements)
+        self.config.set_dictionary_fuzzy_enabled(self.fuzzy_checkbox.isChecked())
+        self.config.set_dictionary_fuzzy_threshold(self.fuzzy_sensitivity.currentData())
         self.config.save()
 
         self.dictionary_changed.emit()

@@ -75,7 +75,9 @@ class ConfigManager:
         },
         "dictionary": {
             "enabled": True,
-            "replacements": {}
+            "replacements": {},
+            "fuzzy_enabled": True,
+            "fuzzy_threshold": 0.75
         }
     }
 
@@ -255,6 +257,22 @@ class ConfigManager:
     def set_dictionary_replacements(self, replacements):
         """Set dictionary replacements mapping."""
         self.set("dictionary", "replacements", value=replacements)
+
+    def get_dictionary_fuzzy_enabled(self):
+        """Get whether fuzzy matching is enabled for the dictionary."""
+        return self.get("dictionary", "fuzzy_enabled", default=True)
+
+    def set_dictionary_fuzzy_enabled(self, enabled):
+        """Set whether fuzzy matching is enabled."""
+        self.set("dictionary", "fuzzy_enabled", value=enabled)
+
+    def get_dictionary_fuzzy_threshold(self):
+        """Get fuzzy matching similarity threshold (0.0 to 1.0)."""
+        return self.get("dictionary", "fuzzy_threshold", default=0.75)
+
+    def set_dictionary_fuzzy_threshold(self, threshold):
+        """Set fuzzy matching threshold."""
+        self.set("dictionary", "fuzzy_threshold", value=threshold)
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""
