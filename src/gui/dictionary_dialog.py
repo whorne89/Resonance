@@ -121,7 +121,7 @@ class DictionaryDialog(QDialog):
         # Add correct word
         add_word_layout = QHBoxLayout()
         self.new_word_input = QLineEdit()
-        self.new_word_input.setPlaceholderText("e.g. iObeya")
+        self.new_word_input.setPlaceholderText("e.g. Kubernetes")
         self.new_word_input.returnPressed.connect(self.add_word)
         add_word_layout.addWidget(self.new_word_input)
 
@@ -176,7 +176,7 @@ class DictionaryDialog(QDialog):
         manual_group = QGroupBox("Add Manually")
         manual_layout = QHBoxLayout()
         self.new_variation_input = QLineEdit()
-        self.new_variation_input.setPlaceholderText("e.g. IOBARE")
+        self.new_variation_input.setPlaceholderText("e.g. Cooper Netties")
         self.new_variation_input.returnPressed.connect(self.add_variation)
         manual_layout.addWidget(self.new_variation_input)
 

@@ -264,7 +264,7 @@ class VTTApplication(QObject):
 
         This catches cases where Whisper splits or re-spells a word
         differently in sentence context vs. isolation:
-          "iObeya" → might be heard as "Iowa Bay", "I obey a", etc.
+          "Kubernetes" → might be heard as "Cooper Netties", "Kuber Netis", etc.
         """
         threshold = self.config.get_dictionary_fuzzy_threshold()
         words = text.split()
@@ -296,7 +296,7 @@ class VTTApplication(QObject):
                     continue
 
                 # Max window size based on correct word length
-                # "iObeya" (6 chars) → up to 3 words ("I obey a")
+                # "Kubernetes" (10 chars) → up to 4 words ("Cooper Netties")
                 max_win = min(4, max(2, len(norm_correct) // 3 + 1))
 
                 for ws in range(1, min(max_win + 1, len(words) - i + 1)):
