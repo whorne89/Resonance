@@ -51,11 +51,11 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         "version": "1.1.0",
         "hotkey": {
-            "combination": "ctrl+alt+r",
+            "combination": "ctrl+alt",
             "enabled": True
         },
         "whisper": {
-            "model_size": "base",
+            "model_size": "small",
             "language": "en",
             "device": "cpu",
             "compute_type": "int8"
@@ -72,6 +72,12 @@ class ConfigManager:
         "ui": {
             "show_notifications": True,
             "minimize_to_tray": True
+        },
+        "dictionary": {
+            "enabled": True,
+            "replacements": {},
+            "fuzzy_enabled": True,
+            "fuzzy_threshold": 0.75
         }
     }
 
@@ -235,6 +241,38 @@ class ConfigManager:
                 merged[key] = value
 
         return merged
+
+    def get_dictionary_enabled(self):
+        """Get whether custom dictionary is enabled."""
+        return self.get("dictionary", "enabled", default=True)
+
+    def set_dictionary_enabled(self, enabled):
+        """Set whether custom dictionary is enabled."""
+        self.set("dictionary", "enabled", value=enabled)
+
+    def get_dictionary_replacements(self):
+        """Get dictionary replacements mapping (wrong word -> correct word)."""
+        return self.get("dictionary", "replacements", default={})
+
+    def set_dictionary_replacements(self, replacements):
+        """Set dictionary replacements mapping."""
+        self.set("dictionary", "replacements", value=replacements)
+
+    def get_dictionary_fuzzy_enabled(self):
+        """Get whether fuzzy matching is enabled for the dictionary."""
+        return self.get("dictionary", "fuzzy_enabled", default=True)
+
+    def set_dictionary_fuzzy_enabled(self, enabled):
+        """Set whether fuzzy matching is enabled."""
+        self.set("dictionary", "fuzzy_enabled", value=enabled)
+
+    def get_dictionary_fuzzy_threshold(self):
+        """Get fuzzy matching similarity threshold (0.0 to 1.0)."""
+        return self.get("dictionary", "fuzzy_threshold", default=0.75)
+
+    def set_dictionary_fuzzy_threshold(self, threshold):
+        """Set fuzzy matching threshold."""
+        self.set("dictionary", "fuzzy_threshold", value=threshold)
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""
