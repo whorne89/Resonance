@@ -51,7 +51,7 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         "version": "1.1.0",
         "hotkey": {
-            "combination": "ctrl+alt+r",
+            "combination": "ctrl+alt",
             "enabled": True
         },
         "whisper": {
