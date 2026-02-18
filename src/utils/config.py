@@ -58,7 +58,9 @@ class ConfigManager:
             "model_size": "small",
             "language": "en",
             "device": "cpu",
-            "compute_type": "int8"
+            "compute_type": "int8",
+            "beam_size": 1,
+            "vad_filter": True
         },
         "audio": {
             "sample_rate": 16000,
@@ -273,6 +275,22 @@ class ConfigManager:
     def set_dictionary_fuzzy_threshold(self, threshold):
         """Set fuzzy matching threshold."""
         self.set("dictionary", "fuzzy_threshold", value=threshold)
+
+    def get_beam_size(self):
+        """Get Whisper beam size (1 = greedy/fast, 5 = beam search/accurate)."""
+        return self.get("whisper", "beam_size", default=1)
+
+    def set_beam_size(self, size):
+        """Set Whisper beam size."""
+        self.set("whisper", "beam_size", value=size)
+
+    def get_vad_filter(self):
+        """Get whether VAD (voice activity detection) filtering is enabled."""
+        return self.get("whisper", "vad_filter", default=True)
+
+    def set_vad_filter(self, enabled):
+        """Set whether VAD filtering is enabled."""
+        self.set("whisper", "vad_filter", value=enabled)
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""

@@ -82,13 +82,15 @@ class Transcriber:
             self.model = None  # Force reload
         self.load_model()
 
-    def transcribe(self, audio_data, language="en"):
+    def transcribe(self, audio_data, language="en", beam_size=1, vad_filter=True):
         """
         Transcribe audio data to text.
 
         Args:
             audio_data: NumPy array of audio samples (float32)
             language: Language code (e.g., "en" for English)
+            beam_size: Beam search width (1 = greedy/fastest, 5 = more accurate/slower)
+            vad_filter: Whether to skip silence using voice activity detection
 
         Returns:
             Transcribed text as string
@@ -101,17 +103,18 @@ class Transcriber:
             return ""
 
         try:
-            self.logger.info(f"Starting transcription of {len(audio_data)} samples...")
-            # Transcribe with faster-whisper
-            # Note: vad_filter disabled for bundled EXE compatibility
-            # (VAD requires silero_vad.onnx which isn't easily bundled)
-            # beam_size=5 is a good balance of speed and accuracy
-            segments, info = self.model.transcribe(
-                audio_data,
-                language=language,
-                beam_size=5,
-                vad_filter=False,
-            )
+            self.logger.info(f"Starting transcription of {len(audio_data)} samples (beam_size={beam_size}, vad={vad_filter})...")
+            transcribe_kwargs = {
+                "language": language,
+                "beam_size": beam_size,
+                "vad_filter": vad_filter,
+            }
+            if vad_filter:
+                transcribe_kwargs["vad_parameters"] = {
+                    "min_silence_duration_ms": 200,
+                    "speech_pad_ms": 100,
+                }
+            segments, info = self.model.transcribe(audio_data, **transcribe_kwargs)
 
             # Combine all segments into single text
             text_parts = []

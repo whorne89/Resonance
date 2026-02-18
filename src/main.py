@@ -36,10 +36,12 @@ class TranscriptionWorker(QObject):
     finished = Signal(str)  # Emits transcribed text
     error = Signal(str)  # Emits error message
 
-    def __init__(self, transcriber, audio_data, logger=None):
+    def __init__(self, transcriber, audio_data, beam_size=1, vad_filter=True, logger=None):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
+        self.beam_size = beam_size
+        self.vad_filter = vad_filter
         self.logger = logger
 
     def run(self):
@@ -47,7 +49,11 @@ class TranscriptionWorker(QObject):
         try:
             if self.logger:
                 self.logger.info("Starting transcription...")
-            text = self.transcriber.transcribe(self.audio_data)
+            text = self.transcriber.transcribe(
+                self.audio_data,
+                beam_size=self.beam_size,
+                vad_filter=self.vad_filter,
+            )
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
             self.finished.emit(text)
@@ -188,7 +194,13 @@ class VTTApplication(QObject):
 
         # Create worker and thread
         self.transcription_thread = QThread()
-        self.transcription_worker = TranscriptionWorker(self.transcriber, audio_data, self.logger)
+        self.transcription_worker = TranscriptionWorker(
+            self.transcriber,
+            audio_data,
+            beam_size=self.config.get_beam_size(),
+            vad_filter=self.config.get_vad_filter(),
+            logger=self.logger,
+        )
 
         # Move worker to thread
         self.transcription_worker.moveToThread(self.transcription_thread)
