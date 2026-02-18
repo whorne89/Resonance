@@ -11,9 +11,13 @@ a = Analysis(
     ],
     hiddenimports=[
         'faster_whisper',
+        'faster_whisper.vad',
         'ctranslate2',
         'huggingface_hub',
         'tokenizers',
+        'onnxruntime',
+        'onnxruntime.capi',
+        'onnxruntime.capi._pybind_state',
         'av',
         'av.audio',
         'av.audio.resampler',

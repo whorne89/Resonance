@@ -109,18 +109,22 @@ class Transcriber:
                 "beam_size": beam_size,
                 "vad_filter": vad_filter,
             }
-            # VAD requires silero_vad.onnx downloaded at runtime.
-            # Disable it automatically when running as a bundled EXE
-            # since the frozen environment can't reliably download the model.
-            from utils.resource_path import is_bundled
-            if is_bundled():
-                transcribe_kwargs["vad_filter"] = False
-            elif vad_filter:
+            if vad_filter:
                 transcribe_kwargs["vad_parameters"] = {
                     "min_silence_duration_ms": 200,
                     "speech_pad_ms": 100,
                 }
-            segments, info = self.model.transcribe(audio_data, **transcribe_kwargs)
+            try:
+                segments, info = self.model.transcribe(audio_data, **transcribe_kwargs)
+            except Exception as vad_err:
+                if vad_filter:
+                    # VAD failed (e.g. onnxruntime/silero unavailable) — retry without it
+                    self.logger.warning(f"VAD failed ({vad_err}), retrying without VAD filter")
+                    transcribe_kwargs["vad_filter"] = False
+                    transcribe_kwargs.pop("vad_parameters", None)
+                    segments, info = self.model.transcribe(audio_data, **transcribe_kwargs)
+                else:
+                    raise
 
             # Combine all segments into single text
             text_parts = []
