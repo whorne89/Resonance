@@ -109,7 +109,13 @@ class Transcriber:
                 "beam_size": beam_size,
                 "vad_filter": vad_filter,
             }
-            if vad_filter:
+            # VAD requires silero_vad.onnx downloaded at runtime.
+            # Disable it automatically when running as a bundled EXE
+            # since the frozen environment can't reliably download the model.
+            from utils.resource_path import is_bundled
+            if is_bundled():
+                transcribe_kwargs["vad_filter"] = False
+            elif vad_filter:
                 transcribe_kwargs["vad_parameters"] = {
                     "min_silence_duration_ms": 200,
                     "speech_pad_ms": 100,
