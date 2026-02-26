@@ -36,10 +36,11 @@ class TranscriptionWorker(QObject):
     finished = Signal(str)  # Emits transcribed text
     error = Signal(str)  # Emits error message
 
-    def __init__(self, transcriber, audio_data, logger=None):
+    def __init__(self, transcriber, audio_data, post_processor=None, logger=None):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
+        self.post_processor = post_processor
         self.logger = logger
 
     def run(self):
@@ -48,6 +49,10 @@ class TranscriptionWorker(QObject):
             if self.logger:
                 self.logger.info("Starting transcription...")
             text = self.transcriber.transcribe(self.audio_data)
+            if self.post_processor and text:
+                if self.logger:
+                    self.logger.info("Running post-processing...")
+                text = self.post_processor.process(text)
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
             self.finished.emit(text)
@@ -73,6 +78,13 @@ class VTTApplication(QObject):
         self.transcriber = Transcriber(
             model_size=self.config.get_model_size()
         )
+
+        # Initialize post-processor
+        from core.post_processor import PostProcessor
+        self.post_processor = PostProcessor(
+            device=self.config.get_processing_device()
+        )
+
         self.keyboard_typer = KeyboardTyper(
             typing_speed=self.config.get_typing_speed(),
             use_clipboard=self.config.get("typing", "use_clipboard_fallback", default=False)
@@ -188,7 +200,17 @@ class VTTApplication(QObject):
 
         # Create worker and thread
         self.transcription_thread = QThread()
-        self.transcription_worker = TranscriptionWorker(self.transcriber, audio_data, self.logger)
+        active_post_processor = (
+            self.post_processor
+            if self.config.get_post_processing_enabled()
+            else None
+        )
+        self.transcription_worker = TranscriptionWorker(
+            self.transcriber,
+            audio_data,
+            post_processor=active_post_processor,
+            logger=self.logger,
+        )
 
         # Move worker to thread
         self.transcription_worker.moveToThread(self.transcription_thread)
@@ -470,6 +492,13 @@ class VTTApplication(QObject):
         model_size = self.config.get_model_size()
         if model_size != self.transcriber.model_size:
             self.transcriber.change_model(model_size)
+
+        # Update processing device for both Whisper and PostProcessor
+        device = self.config.get_processing_device()
+        if device != self.transcriber.device:
+            self.transcriber.device = device
+            self.transcriber.model = None  # force reload on next use
+        self.post_processor.change_device(device)
 
         # Update typing speed and method
         self.keyboard_typer.set_typing_speed(self.config.get_typing_speed())
