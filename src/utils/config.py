@@ -3,6 +3,7 @@ Configuration management for Will's VTT.
 Handles loading, saving, and validating user settings.
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -281,7 +282,7 @@ class ConfigManager:
         self.set("dictionary", "fuzzy_threshold", value=threshold)
 
     def get_processing_device(self):
-        """Get processing device for Whisper and grammar LLM ('cpu' or 'cuda')."""
+        """Get processing device ('cpu' or 'cuda')."""
         return self.get("processing", "device", default="cpu")
 
     def set_processing_device(self, device):
@@ -298,5 +299,5 @@ class ConfigManager:
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         self.save()
