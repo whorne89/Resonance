@@ -12,9 +12,8 @@ from core.post_processor import PostProcessor
 
 class TestPostProcessorInit:
     def test_default_device_is_cpu(self):
-        pp = PostProcessor.__new__(PostProcessor)
-        pp.device = "cpu"
-        pp.model = None
+        with patch('core.post_processor.get_app_data_path', return_value='/fake'):
+            pp = PostProcessor()
         assert pp.device == "cpu"
 
     def test_model_path_includes_filename(self):
@@ -34,7 +33,8 @@ class TestIsModelDownloaded:
             pp = PostProcessor(device="cpu")
             # Create the file
             os.makedirs(os.path.dirname(pp.model_path), exist_ok=True)
-            open(pp.model_path, 'w').close()
+            with open(pp.model_path, 'w'):
+                pass
             assert pp.is_model_downloaded() is True
 
 

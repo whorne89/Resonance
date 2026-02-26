@@ -49,13 +49,8 @@ class PostProcessor:
         """Return True if the GGUF model file exists locally."""
         return os.path.isfile(self.model_path)
 
-    def download_model(self, progress_callback=None):
-        """
-        Download the GGUF model from HuggingFace.
-
-        Args:
-            progress_callback: Optional callable(bytes_downloaded, total_bytes)
-        """
+    def download_model(self):
+        """Download the GGUF model from HuggingFace."""
         from huggingface_hub import hf_hub_download
 
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
@@ -111,10 +106,15 @@ class PostProcessor:
             return text
 
         try:
-            if self.model is None:
-                self.load_model()
+            with self._lock:
+                model = self.model
 
-            response = self.model.create_chat_completion(
+            if model is None:
+                self.load_model()
+                with self._lock:
+                    model = self.model
+
+            response = model.create_chat_completion(
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": text},
@@ -147,4 +147,5 @@ class PostProcessor:
 
     def is_loaded(self):
         """Return True if model is currently loaded in memory."""
-        return self.model is not None
+        with self._lock:
+            return self.model is not None
