@@ -332,13 +332,18 @@ class SettingsDialog(QDialog):
         device_layout.addStretch()
         layout.addRow("Processing Device:", device_layout)
 
-        # Check if CUDA is available (requires CUDA build of llama-cpp-python)
+        # Check if CUDA is available
+        # Try the llama_cpp API first; fall back to checking for CUDA driver
+        cuda_available = False
         try:
             import llama_cpp
-            cuda_available = (
-                hasattr(llama_cpp, 'llama_supports_gpu_offload')
-                and llama_cpp.llama_supports_gpu_offload()
-            )
+            if hasattr(llama_cpp, 'llama_supports_gpu_offload'):
+                cuda_available = llama_cpp.llama_supports_gpu_offload()
+            else:
+                # Newer llama-cpp-python: check for CUDA driver directly
+                import ctypes
+                ctypes.CDLL("nvcuda.dll")
+                cuda_available = True
         except Exception:
             cuda_available = False
 
@@ -360,6 +365,10 @@ class SettingsDialog(QDialog):
 
         self.pp_download_button = QPushButton("Download Model (~400 MB)")
         self.pp_download_button.clicked.connect(self.download_grammar_model)
+
+        # Hidden by default; shown when post-processing is enabled
+        self.pp_status_label.setVisible(False)
+        self.pp_download_button.setVisible(False)
 
         pp_model_layout = QHBoxLayout()
         pp_model_layout.addWidget(self.pp_status_label)

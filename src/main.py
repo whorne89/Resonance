@@ -76,7 +76,8 @@ class VTTApplication(QObject):
         self.config = ConfigManager()
         self.audio_recorder = AudioRecorder()
         self.transcriber = Transcriber(
-            model_size=self.config.get_model_size()
+            model_size=self.config.get_model_size(),
+            device=self.config.get_processing_device(),
         )
 
         # Initialize post-processor

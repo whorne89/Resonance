@@ -100,3 +100,39 @@ class TestChangeDevice:
         pp.change_device("cpu")
         # Model should still be set (not reset)
         assert pp.model is mock
+
+
+class TestLoadModel:
+    def test_raises_when_model_not_downloaded(self, tmp_path):
+        with patch('core.post_processor.get_app_data_path', return_value=str(tmp_path)):
+            pp = PostProcessor(device="cpu")
+        with pytest.raises(RuntimeError, match="not found"):
+            pp.load_model()
+
+    def test_does_not_reload_when_already_loaded(self):
+        with patch('core.post_processor.get_app_data_path', return_value='/fake'):
+            pp = PostProcessor(device="cpu")
+        existing_model = MagicMock()
+        pp.model = existing_model
+        pp.load_model()  # Should return immediately without loading
+        assert pp.model is existing_model
+
+
+class TestDownloadModel:
+    def test_calls_hf_hub_download_with_correct_args(self, tmp_path):
+        with patch('core.post_processor.get_app_data_path', return_value=str(tmp_path)):
+            pp = PostProcessor(device="cpu")
+
+        # Create the expected file so the post-download check passes
+        os.makedirs(os.path.dirname(pp.model_path), exist_ok=True)
+        with open(pp.model_path, 'w'):
+            pass
+
+        with patch('core.post_processor.hf_hub_download') as mock_download:
+            pp.download_model()
+
+        mock_download.assert_called_once_with(
+            repo_id="Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+            filename="qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            local_dir=os.path.dirname(pp.model_path),
+        )

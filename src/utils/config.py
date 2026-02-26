@@ -58,7 +58,6 @@ class ConfigManager:
         "whisper": {
             "model_size": "small",
             "language": "en",
-            "device": "cpu",
             "compute_type": "int8"
         },
         "audio": {

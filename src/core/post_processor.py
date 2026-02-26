@@ -6,6 +6,8 @@ Fixes grammar, punctuation, and spoken formatting commands using a local GGUF mo
 import os
 import threading
 
+from huggingface_hub import hf_hub_download
+
 from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
 
@@ -51,8 +53,6 @@ class PostProcessor:
 
     def download_model(self):
         """Download the GGUF model from HuggingFace."""
-        from huggingface_hub import hf_hub_download
-
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         self.logger.info(f"Downloading grammar model from {MODEL_REPO}...")
 
@@ -61,6 +61,10 @@ class PostProcessor:
             filename=MODEL_FILENAME,
             local_dir=os.path.dirname(self.model_path),
         )
+        if not os.path.isfile(self.model_path):
+            raise RuntimeError(
+                f"Download completed but model file not found at {self.model_path}"
+            )
         self.logger.info("Grammar model downloaded successfully")
 
     def load_model(self):
@@ -119,7 +123,7 @@ class PostProcessor:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": text},
                 ],
-                max_tokens=len(text) * 2 + 100,
+                max_tokens=min(len(text) * 2 + 100, 512),
                 temperature=0.0,
             )
             result = response["choices"][0]["message"]["content"].strip()
