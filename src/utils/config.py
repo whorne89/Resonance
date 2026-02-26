@@ -78,6 +78,12 @@ class ConfigManager:
             "replacements": {},
             "fuzzy_enabled": True,
             "fuzzy_threshold": 0.75
+        },
+        "processing": {
+            "device": "cpu"
+        },
+        "post_processing": {
+            "enabled": False
         }
     }
 
@@ -273,6 +279,22 @@ class ConfigManager:
     def set_dictionary_fuzzy_threshold(self, threshold):
         """Set fuzzy matching threshold."""
         self.set("dictionary", "fuzzy_threshold", value=threshold)
+
+    def get_processing_device(self):
+        """Get processing device for Whisper and grammar LLM ('cpu' or 'cuda')."""
+        return self.get("processing", "device", default="cpu")
+
+    def set_processing_device(self, device):
+        """Set processing device ('cpu' or 'cuda')."""
+        self.set("processing", "device", value=device)
+
+    def get_post_processing_enabled(self):
+        """Get whether LLM post-processing is enabled."""
+        return self.get("post_processing", "enabled", default=False)
+
+    def set_post_processing_enabled(self, enabled):
+        """Set whether LLM post-processing is enabled."""
+        self.set("post_processing", "enabled", value=enabled)
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""
