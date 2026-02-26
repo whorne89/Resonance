@@ -332,10 +332,13 @@ class SettingsDialog(QDialog):
         device_layout.addStretch()
         layout.addRow("Processing Device:", device_layout)
 
-        # Check if CUDA is available
+        # Check if CUDA is available (requires CUDA build of llama-cpp-python)
         try:
-            import llama_cpp  # noqa
-            cuda_available = True
+            import llama_cpp
+            cuda_available = (
+                hasattr(llama_cpp, 'llama_supports_gpu_offload')
+                and llama_cpp.llama_supports_gpu_offload()
+            )
         except Exception:
             cuda_available = False
 
@@ -375,7 +378,8 @@ class SettingsDialog(QDialog):
         """Show grammar model controls only when post-processing is enabled."""
         self.pp_status_label.setVisible(enabled)
         self.pp_download_button.setVisible(enabled)
-        self._refresh_pp_model_status()
+        if enabled:
+            self._refresh_pp_model_status()
 
     def _refresh_pp_model_status(self):
         """Update the grammar model status label."""
@@ -412,16 +416,22 @@ class SettingsDialog(QDialog):
 
     def _on_download_complete(self):
         """Called on main thread after successful download."""
-        self.pp_download_button.setEnabled(True)
-        self._refresh_pp_model_status()
-        QMessageBox.information(self, "Download Complete", "Grammar model downloaded successfully.")
+        try:
+            self.pp_download_button.setEnabled(True)
+            self._refresh_pp_model_status()
+            QMessageBox.information(self, "Download Complete", "Grammar model downloaded successfully.")
+        except RuntimeError:
+            pass  # Dialog was closed before download finished
 
     def _on_download_error(self, error_msg):
         """Called on main thread after failed download."""
-        self.pp_download_button.setEnabled(True)
-        self.pp_status_label.setText("Download failed")
-        self.pp_status_label.setStyleSheet("color: red; font-size: 10px;")
-        QMessageBox.critical(self, "Download Failed", f"Could not download grammar model:\n{error_msg}")
+        try:
+            self.pp_download_button.setEnabled(True)
+            self.pp_status_label.setText("Download failed")
+            self.pp_status_label.setStyleSheet("color: red; font-size: 10px;")
+            QMessageBox.critical(self, "Download Failed", f"Could not download grammar model:\n{error_msg}")
+        except RuntimeError:
+            pass  # Dialog was closed before download finished
 
     def create_audio_group(self):
         """Create audio device configuration group."""
@@ -565,7 +575,6 @@ class SettingsDialog(QDialog):
         # Post-processing
         pp_enabled = self.config.get_post_processing_enabled()
         self.post_processing_checkbox.setChecked(pp_enabled)
-        self._update_pp_model_visibility(pp_enabled)
 
     def save_settings(self):
         """Save settings and emit signal."""
