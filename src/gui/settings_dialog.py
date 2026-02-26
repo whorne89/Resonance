@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
-    QButtonGroup
+    QButtonGroup, QCheckBox
 )
 from PySide6.QtCore import Signal, QTimer, Qt
 from PySide6.QtGui import QPalette, QColor, QKeyEvent
@@ -181,7 +181,7 @@ class SettingsDialog(QDialog):
     # Signal emitted when settings are saved
     settings_changed = Signal()
 
-    def __init__(self, config_manager, audio_recorder, transcriber, parent=None):
+    def __init__(self, config_manager, audio_recorder, transcriber, post_processor=None, parent=None):
         """
         Initialize settings dialog.
 
@@ -189,12 +189,14 @@ class SettingsDialog(QDialog):
             config_manager: ConfigManager instance
             audio_recorder: AudioRecorder instance
             transcriber: Transcriber instance
+            post_processor: PostProcessor instance (optional)
             parent: Parent widget
         """
         super().__init__(parent)
         self.config = config_manager
         self.audio_recorder = audio_recorder
         self.transcriber = transcriber
+        self.post_processor = post_processor
 
         self.setWindowTitle("Resonance Settings")
         self.setMinimumWidth(500)
@@ -213,6 +215,10 @@ class SettingsDialog(QDialog):
         # Whisper model settings
         model_group = self.create_model_group()
         layout.addWidget(model_group)
+
+        # Processing device + post-processing
+        processing_group = self.create_processing_group()
+        layout.addWidget(processing_group)
 
         # Audio settings
         audio_group = self.create_audio_group()
@@ -306,6 +312,116 @@ class SettingsDialog(QDialog):
 
         group.setLayout(layout)
         return group
+
+    def create_processing_group(self):
+        """Create processing device + post-processing group."""
+        group = QGroupBox("Processing")
+        layout = QFormLayout()
+
+        # Device selection
+        device_layout = QHBoxLayout()
+        self.device_cpu_radio = QRadioButton("CPU")
+        self.device_gpu_radio = QRadioButton("GPU (CUDA)")
+
+        self.device_button_group = QButtonGroup()
+        self.device_button_group.addButton(self.device_cpu_radio, 0)
+        self.device_button_group.addButton(self.device_gpu_radio, 1)
+
+        device_layout.addWidget(self.device_cpu_radio)
+        device_layout.addWidget(self.device_gpu_radio)
+        device_layout.addStretch()
+        layout.addRow("Processing Device:", device_layout)
+
+        # Check if CUDA is available
+        try:
+            import llama_cpp  # noqa
+            cuda_available = True
+        except Exception:
+            cuda_available = False
+
+        if not cuda_available:
+            self.device_gpu_radio.setEnabled(False)
+            self.device_gpu_radio.setToolTip("GPU requires the CUDA build of llama-cpp-python")
+
+        device_info = QLabel("Applies to both Whisper and grammar correction.")
+        device_info.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addRow("", device_info)
+
+        # Post-processing toggle
+        self.post_processing_checkbox = QCheckBox("Enable grammar & punctuation correction")
+        layout.addRow("Post-Processing:", self.post_processing_checkbox)
+
+        # Model status + download button
+        self.pp_status_label = QLabel("Model not downloaded")
+        self.pp_status_label.setStyleSheet("color: gray; font-size: 10px;")
+
+        self.pp_download_button = QPushButton("Download Model (~400 MB)")
+        self.pp_download_button.clicked.connect(self.download_grammar_model)
+
+        pp_model_layout = QHBoxLayout()
+        pp_model_layout.addWidget(self.pp_status_label)
+        pp_model_layout.addStretch()
+        pp_model_layout.addWidget(self.pp_download_button)
+
+        layout.addRow("Grammar Model:", pp_model_layout)
+
+        # Show/hide model row based on toggle
+        self.post_processing_checkbox.toggled.connect(self._update_pp_model_visibility)
+
+        group.setLayout(layout)
+        return group
+
+    def _update_pp_model_visibility(self, enabled):
+        """Show grammar model controls only when post-processing is enabled."""
+        self.pp_status_label.setVisible(enabled)
+        self.pp_download_button.setVisible(enabled)
+        self._refresh_pp_model_status()
+
+    def _refresh_pp_model_status(self):
+        """Update the grammar model status label."""
+        if self.post_processor and self.post_processor.is_model_downloaded():
+            self.pp_status_label.setText("Model ready")
+            self.pp_status_label.setStyleSheet("color: green; font-size: 10px;")
+            self.pp_download_button.setText("Re-download Model")
+        else:
+            self.pp_status_label.setText("Model not downloaded")
+            self.pp_status_label.setStyleSheet("color: gray; font-size: 10px;")
+            self.pp_download_button.setText("Download Model (~400 MB)")
+
+    def download_grammar_model(self):
+        """Download the grammar model with progress feedback."""
+        if not self.post_processor:
+            return
+
+        self.pp_download_button.setEnabled(False)
+        self.pp_status_label.setText("Downloading...")
+        self.pp_status_label.setStyleSheet("color: blue; font-size: 10px;")
+
+        import threading
+
+        def do_download():
+            try:
+                self.post_processor.download_model()
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, self._on_download_complete)
+            except Exception as e:
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self._on_download_error(str(e)))
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def _on_download_complete(self):
+        """Called on main thread after successful download."""
+        self.pp_download_button.setEnabled(True)
+        self._refresh_pp_model_status()
+        QMessageBox.information(self, "Download Complete", "Grammar model downloaded successfully.")
+
+    def _on_download_error(self, error_msg):
+        """Called on main thread after failed download."""
+        self.pp_download_button.setEnabled(True)
+        self.pp_status_label.setText("Download failed")
+        self.pp_status_label.setStyleSheet("color: red; font-size: 10px;")
+        QMessageBox.critical(self, "Download Failed", f"Could not download grammar model:\n{error_msg}")
 
     def create_audio_group(self):
         """Create audio device configuration group."""
@@ -439,6 +555,18 @@ class SettingsDialog(QDialog):
         else:
             self.typing_char_radio.setChecked(True)
 
+        # Processing device
+        device = self.config.get_processing_device()
+        if device == "cuda":
+            self.device_gpu_radio.setChecked(True)
+        else:
+            self.device_cpu_radio.setChecked(True)
+
+        # Post-processing
+        pp_enabled = self.config.get_post_processing_enabled()
+        self.post_processing_checkbox.setChecked(pp_enabled)
+        self._update_pp_model_visibility(pp_enabled)
+
     def save_settings(self):
         """Save settings and emit signal."""
         try:
@@ -492,6 +620,15 @@ class SettingsDialog(QDialog):
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
+
+            # Processing device
+            device = "cuda" if self.device_gpu_radio.isChecked() else "cpu"
+            self.config.set_processing_device(device)
+
+            # Post-processing
+            self.config.set_post_processing_enabled(
+                self.post_processing_checkbox.isChecked()
+            )
             self.config.save()
 
             # Emit signal

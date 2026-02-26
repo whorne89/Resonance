@@ -460,7 +460,8 @@ class VTTApplication(QObject):
             dialog = SettingsDialog(
                 self.config,
                 self.audio_recorder,
-                self.transcriber
+                self.transcriber,
+                post_processor=self.post_processor,
             )
             dialog.settings_changed.connect(self.on_settings_changed)
 
