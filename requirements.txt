@@ -1,0 +1,19 @@
+# GUI Framework
+PySide6>=6.6.0
+
+# Audio Processing
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Whisper Transcription
+faster-whisper>=1.0.0
+
+# Input Simulation
+pynput>=1.7.6
+pyperclip>=1.8.2
+
+# Grammar/formatting LLM (llama-cpp-python)
+# CPU install (default): pip install llama-cpp-python
+# CUDA/GPU on Windows: pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+llama-cpp-python>=0.3.0
