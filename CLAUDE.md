@@ -8,6 +8,7 @@ Resonance is a Windows voice-to-text desktop application that uses Whisper (via 
 - **GUI**: PySide6 (Qt for Python)
 - **Audio**: sounddevice
 - **Transcription**: faster-whisper (CTranslate2 backend, CPU only)
+- **Post-processing**: llama-server (llama.cpp) with Qwen2.5-0.5B-Instruct Q4_K_M
 - **Hotkeys**: pynput
 - **Typing output**: pynput keyboard + pyperclip
 - **Threading**: QThread for async transcription
@@ -20,11 +21,12 @@ src/
   core/
     audio_recorder.py        - Audio capture using sounddevice
     transcriber.py           - Whisper model loading and transcription
+    post_processor.py        - LLM post-processing (llama-server / onnx backends)
     keyboard_typer.py        - Keyboard input simulation (type or paste)
     hotkey_manager.py        - Global hotkey registration (pynput)
   gui/
     system_tray.py           - System tray icon with context menu
-    settings_dialog.py       - Settings UI (hotkey, model, audio, typing, dictionary)
+    settings_dialog.py       - Settings UI (hotkey, model, audio, typing, dictionary, post-processing)
     dictionary_dialog.py     - Custom dictionary editor UI
   utils/
     config.py                - ConfigManager (JSON settings)
@@ -48,9 +50,10 @@ src/
 ## Transcription Flow
 1. User holds hotkey -> AudioRecorder captures audio
 2. User releases hotkey -> Audio sent to TranscriptionWorker (QThread)
-3. Worker calls Transcriber.transcribe() -> returns text
-4. VTTApplication.on_transcription_complete() applies dictionary replacements
-5. KeyboardTyper.type_text() outputs to active window
+3. Worker calls Transcriber.transcribe() -> returns raw text
+4. Worker calls PostProcessor.process() -> fixes grammar/formatting (if enabled)
+5. VTTApplication.on_transcription_complete() applies dictionary replacements
+6. KeyboardTyper.type_text() outputs to active window
 
 ## Whisper Models
 - Dropdown uses display-name -> model-ID mapping with `QComboBox.addItem(name, userData=id)`
@@ -70,11 +73,16 @@ src/
 - **Vulkan via pywhispercpp**: tried and reverted — pywhispercpp CPU is ~2x slower than faster-whisper (4.5s vs 2.2s for 5s audio). Unacceptable latency for dictation.
 - **Decision**: CPU-only with faster-whisper. GPU not needed — tiny model is already sub-second.
 
-## Next Up — Post-Processing
-- **Goal**: Add CPU-based post-processing after transcription to fix punctuation, capitalization, and minor word errors from tiny model
-- **Previous attempt**: llama-cpp-python on `feat/post-processing` branch — abandoned due to build/distribution issues
-- **Options to explore**: dedicated punctuation models, small quantized LLMs, rule-based cleanup
-- **Key constraint**: must be fast enough on CPU to not negate tiny model's speed advantage
+## Post-Processing
+- **Backend**: llama-server (llama.cpp binary) managing Qwen2.5-0.5B-Instruct Q4_K_M GGUF model
+- **Alternative backend**: onnxruntime-genai (pure Python, slower but simpler install)
+- **Benchmarks (Ryzen 3700X CPU)**: llama-server 0.34s/sample (39.8 tok/s), onnx 0.99s/sample (16.2 tok/s)
+- **Server startup**: ~1s one-time; stays loaded in memory between transcriptions
+- **PostProcessor class**: `src/core/post_processor.py` — lazy-loads model, thread-safe, graceful fallback
+- **Config**: `post_processing.enabled` (default False), `post_processing.backend` (default "llama-server")
+- **Model storage**: GGUF in `.resonance/models/postproc-gguf/`, binary in `.resonance/bin/`
+- **Settings UI**: "Post-Processing (Experimental)" group with enable checkbox and download button
+- **Prompt tuning needed**: formatting commands (bullet, new line, scratch that) work partially; capitalization inconsistent
 
 ## Config Location
 Settings stored at `<app_root>/.resonance/settings.json`
@@ -87,6 +95,8 @@ Settings stored at `<app_root>/.resonance/settings.json`
 - `QTimer.singleShot` from `threading.Thread` silently fails — use `QObject` signals for cross-thread UI updates
 - `ctypes.CDLL("name.dll")` is unreliable on Windows even with PATH set — use full path or `os.add_dll_directory()`
 - `uv pip install` may target system Python; use `--python .venv/Scripts/python.exe` to be safe
+- **llama-server subprocess**: must use absolute paths on Windows; needs all DLLs from the zip (ggml-*.dll, llama.dll, etc.)
+- **onnxruntime-genai v0.12 API**: no `input_ids` on params; use `generator.append_tokens()` instead; `apply_chat_template` takes JSON string
 
 ## Abandoned Work
 - **`feat/post-processing` branch** — grammar correction via llama-cpp-python; parked due to distribution complexity (no pre-built Python 3.12 wheels, CUDA build issues). Code preserved on branch.
