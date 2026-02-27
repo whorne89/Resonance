@@ -1,12 +1,14 @@
 """
 Sound effects for Resonance.
-Generates short tones programmatically using numpy + sounddevice.
+Generates short tones and plays them via Windows native audio API (winsound).
+Uses a completely separate audio path from sounddevice to avoid conflicts
+with the recording InputStream.
 """
 
-import time
+import io
+import struct
 import numpy as np
-import sounddevice as sd
-import threading
+import winsound
 
 from utils.logger import get_logger
 
@@ -19,10 +21,10 @@ class SoundEffects:
         self.volume = volume
         self.logger = get_logger()
 
-        # Pre-generate tones at init so playback is instant.
+        # Pre-generate tones as in-memory WAV bytes for instant playback.
         # C6 (bright) for start, G5 (warm) for stop — a perfect 4th apart.
-        self._start_tone = self._generate_chime(freq=1047, duration=0.18)
-        self._stop_tone = self._generate_chime(freq=784, duration=0.18)
+        self._start_wav = self._make_wav(self._generate_chime(freq=1047, duration=0.18))
+        self._stop_wav = self._make_wav(self._generate_chime(freq=784, duration=0.18))
 
     def _generate_chime(self, freq, duration):
         """Generate a chime tone with harmonics, chorus, and natural decay."""
@@ -46,35 +48,41 @@ class SoundEffects:
         if fade_samples > 0:
             tone[:fade_samples] *= np.linspace(0, 1, fade_samples)
 
-        return tone.astype(np.float32).reshape(-1, 1)
+        return tone
+
+    def _make_wav(self, tone):
+        """Convert float32 tone array to in-memory WAV bytes."""
+        pcm = (tone * 32767).astype(np.int16)
+        data_size = len(pcm) * 2
+
+        buf = io.BytesIO()
+        buf.write(b'RIFF')
+        buf.write(struct.pack('<I', 36 + data_size))
+        buf.write(b'WAVE')
+        buf.write(b'fmt ')
+        buf.write(struct.pack('<I', 16))
+        buf.write(struct.pack('<H', 1))                    # PCM format
+        buf.write(struct.pack('<H', 1))                    # mono
+        buf.write(struct.pack('<I', self.sample_rate))     # sample rate
+        buf.write(struct.pack('<I', self.sample_rate * 2)) # byte rate
+        buf.write(struct.pack('<H', 2))                    # block align
+        buf.write(struct.pack('<H', 16))                   # bits per sample
+        buf.write(b'data')
+        buf.write(struct.pack('<I', data_size))
+        buf.write(pcm.tobytes())
+
+        return buf.getvalue()
 
     def play_start_tone(self):
         """Play chime (recording started). Non-blocking."""
-        self._play_async(self._start_tone)
+        try:
+            winsound.PlaySound(self._start_wav, winsound.SND_MEMORY | winsound.SND_ASYNC)
+        except Exception as e:
+            self.logger.warning(f"Sound playback failed: {e}")
 
     def play_stop_tone(self):
         """Play chime (recording stopped). Non-blocking."""
-        self._play_async(self._stop_tone)
-
-    def _play_async(self, tone):
-        """Play a tone in a background thread."""
-        def _play():
-            try:
-                stream = sd.OutputStream(
-                    samplerate=self.sample_rate,
-                    channels=1,
-                    dtype='float32',
-                )
-                stream.start()
-                stream.write(tone)
-                # Sleep for tone duration + buffer so audio fully plays
-                # before the stream is torn down
-                duration = len(tone) / self.sample_rate
-                time.sleep(duration + 0.05)
-                stream.stop()
-                stream.close()
-            except Exception as e:
-                self.logger.warning(f"Sound playback failed: {e}")
-
-        thread = threading.Thread(target=_play, daemon=True)
-        thread.start()
+        try:
+            winsound.PlaySound(self._stop_wav, winsound.SND_MEMORY | winsound.SND_ASYNC)
+        except Exception as e:
+            self.logger.warning(f"Sound playback failed: {e}")
