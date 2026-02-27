@@ -3,10 +3,8 @@ Resonance - Voice to Text Application
 Main entry point that orchestrates all components.
 """
 
-import re
 import sys
 import ctypes
-from difflib import SequenceMatcher
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
 
@@ -24,6 +22,7 @@ from core.audio_recorder import AudioRecorder
 from core.transcriber import Transcriber
 from core.keyboard_typer import KeyboardTyper
 from core.hotkey_manager import HotkeyManager
+from core.dictionary import DictionaryProcessor
 from gui.system_tray import SystemTrayIcon
 from gui.settings_dialog import SettingsDialog
 from utils.config import ConfigManager
@@ -79,6 +78,7 @@ class VTTApplication(QObject):
             use_clipboard=self.config.get("typing", "use_clipboard_fallback", default=False)
         )
         self.hotkey_manager = HotkeyManager()
+        self.dictionary = DictionaryProcessor(self.config, self.logger)
 
         # Set audio device from config
         device_idx = self.config.get_audio_device()
@@ -218,129 +218,6 @@ class VTTApplication(QObject):
         # Schedule cleanup for 30 seconds after start as safety net
         QTimer.singleShot(30000, self.force_cleanup_if_stuck)
 
-    def apply_dictionary(self, text):
-        """
-        Apply custom dictionary replacements to transcribed text.
-
-        Two-phase approach:
-        1. Exact matching — replaces known wrong variations case-insensitively
-        2. Fuzzy matching — catches unknown variations by comparing
-           sliding n-gram windows against dictionary words using
-           normalized character similarity
-
-        Args:
-            text: Raw transcribed text
-
-        Returns:
-            Text with dictionary replacements applied
-        """
-        if not self.config.get_dictionary_enabled():
-            return text
-
-        replacements = self.config.get_dictionary_replacements()
-        if not replacements:
-            return text
-
-        # Phase 1: Exact matching (known variations)
-        for correct_word, wrong_variations in replacements.items():
-            if not isinstance(wrong_variations, list):
-                continue
-            for wrong in wrong_variations:
-                pattern = re.compile(re.escape(wrong), re.IGNORECASE)
-                text = pattern.sub(correct_word, text)
-
-        # Phase 2: Fuzzy matching (unknown variations)
-        if self.config.get_dictionary_fuzzy_enabled():
-            text = self._apply_fuzzy_dictionary(text, replacements)
-
-        return text
-
-    def _apply_fuzzy_dictionary(self, text, replacements):
-        """
-        Fuzzy matching pass for dictionary replacements.
-
-        Scans the transcription using sliding windows of 1-4 words.
-        For each window, normalizes both the window text and the
-        dictionary word (lowercase, strip spaces/punctuation), then
-        compares similarity. If a window is close enough to a
-        dictionary word, it gets replaced.
-
-        This catches cases where Whisper splits or re-spells a word
-        differently in sentence context vs. isolation:
-          "Kubernetes" → might be heard as "Cooper Netties", "Kuber Netis", etc.
-        """
-        threshold = self.config.get_dictionary_fuzzy_threshold()
-        words = text.split()
-
-        if not words:
-            return text
-
-        # Build targets: (correct_word, normalized_form)
-        targets = []
-        for correct_word in replacements:
-            norm = re.sub(r'[^a-z0-9]', '', correct_word.lower())
-            if len(norm) >= 3:  # Skip very short words to avoid false positives
-                targets.append((correct_word, norm))
-
-        if not targets:
-            return text
-
-        result = []
-        i = 0
-
-        while i < len(words):
-            best_match = None
-            best_ratio = threshold
-            best_window = 0
-
-            for correct_word, norm_correct in targets:
-                # Skip if this word was already the correct word (from phase 1)
-                if i < len(words) and words[i].lower() == correct_word.lower():
-                    continue
-
-                # Max window size based on correct word length
-                # "Kubernetes" (10 chars) → up to 4 words ("Cooper Netties")
-                max_win = min(4, max(2, len(norm_correct) // 3 + 1))
-
-                for ws in range(1, min(max_win + 1, len(words) - i + 1)):
-                    window_text = ' '.join(words[i:i + ws])
-                    norm_window = re.sub(r'[^a-z0-9]', '', window_text.lower())
-
-                    if not norm_window:
-                        continue
-
-                    # Length ratio check — normalized lengths should be similar
-                    len_ratio = min(len(norm_correct), len(norm_window)) / max(len(norm_correct), len(norm_window))
-                    if len_ratio < 0.6:
-                        continue
-
-                    ratio = SequenceMatcher(None, norm_correct, norm_window).ratio()
-                    if ratio > best_ratio:
-                        best_match = correct_word
-                        best_ratio = ratio
-                        best_window = ws
-
-            if best_match and best_window > 0:
-                # Preserve trailing punctuation from the last word in the window
-                last_word = words[i + best_window - 1]
-                trailing = ''
-                stripped = last_word
-                while stripped and not stripped[-1].isalnum():
-                    trailing = stripped[-1] + trailing
-                    stripped = stripped[:-1]
-
-                result.append(best_match + trailing)
-                self.logger.info(
-                    f"Fuzzy match: '{' '.join(words[i:i + best_window])}' -> "
-                    f"'{best_match}' (similarity: {best_ratio:.2f})"
-                )
-                i += best_window
-            else:
-                result.append(words[i])
-                i += 1
-
-        return ' '.join(result)
-
     def on_transcription_complete(self, text):
         """
         Called when transcription is complete.
@@ -354,7 +231,7 @@ class VTTApplication(QObject):
             # Apply custom dictionary replacements
             if text:
                 original = text
-                text = self.apply_dictionary(text)
+                text = self.dictionary.apply(text)
                 if text != original:
                     self.logger.info(f"Dictionary applied: '{original}' -> '{text}'")
 
