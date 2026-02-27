@@ -22,32 +22,28 @@ class SoundEffects:
         self.logger = get_logger()
 
         # Pre-generate tones as in-memory WAV bytes for instant playback.
-        # C6 (bright) for start, G5 (warm) for stop — a perfect 4th apart.
-        self._start_wav = self._make_wav(self._generate_chime(freq=1047, duration=0.18))
-        self._stop_wav = self._make_wav(self._generate_chime(freq=784, duration=0.18))
+        self._start_wav = self._make_wav(self._generate_tone(freq=880, duration=0.25))
+        self._stop_wav = self._make_wav(self._generate_tone(freq=660, duration=0.25))
 
-    def _generate_chime(self, freq, duration):
-        """Generate a chime tone with harmonics, chorus, and natural decay."""
-        t = np.linspace(0, duration, int(self.sample_rate * duration), endpoint=False)
+    def _generate_tone(self, freq, duration):
+        """Generate a clean sine tone with smooth raised-cosine envelope."""
+        n_samples = int(self.sample_rate * duration)
+        t = np.linspace(0, duration, n_samples, endpoint=False)
 
-        # Fundamental + slight detune for chorus width + octave harmonic
-        tone = np.sin(2 * np.pi * freq * t)
-        tone += 0.3 * np.sin(2 * np.pi * (freq * 1.005) * t)
-        tone += 0.4 * np.sin(2 * np.pi * freq * 2 * t)
+        # Pure sine wave
+        tone = np.sin(2 * np.pi * freq * t) * self.volume
 
-        # Normalize then apply volume
-        peak = np.max(np.abs(tone))
-        if peak > 0:
-            tone = tone / peak * self.volume
+        # Raised-cosine fade in (15ms) and fade out (80ms) for clean transients
+        fade_in = int(self.sample_rate * 0.015)
+        fade_out = int(self.sample_rate * 0.08)
 
-        # Exponential decay for natural chime character
-        tone *= np.exp(-t * 12)
+        envelope = np.ones(n_samples)
+        if fade_in > 0:
+            envelope[:fade_in] = 0.5 * (1 - np.cos(np.linspace(0, np.pi, fade_in)))
+        if fade_out > 0:
+            envelope[-fade_out:] = 0.5 * (1 + np.cos(np.linspace(0, np.pi, fade_out)))
 
-        # Quick fade in (2ms) to avoid click on attack
-        fade_samples = int(self.sample_rate * 0.002)
-        if fade_samples > 0:
-            tone[:fade_samples] *= np.linspace(0, 1, fade_samples)
-
+        tone *= envelope
         return tone
 
     def _make_wav(self, tone):
