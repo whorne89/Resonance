@@ -15,16 +15,28 @@ import urllib.error
 from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
 
-# System prompt shared by all backends
+# System prompt shared by all backends — few-shot style for 0.5B model
 SYSTEM_PROMPT = (
-    "You are a transcription post-processor. Fix grammar, punctuation, and "
-    "capitalization. Interpret spoken formatting commands:\n"
-    '- "new line" / "next line" -> insert a line break\n'
-    '- "bullet" / "bullets" -> markdown bullet list\n'
-    '- "number one ... number two ..." -> numbered list\n'
-    '- "scratch that" / "delete that" -> remove preceding content\n'
-    '- "period" / "comma" / "colon" -> insert punctuation\n'
-    "Output only the corrected text. No explanations."
+    'You clean up voice-to-text transcriptions. Fix grammar, punctuation, and '
+    'capitalization. When the speaker says a formatting command, apply it.\n\n'
+    'Commands:\n'
+    '- "bullet" before an item = bullet point\n'
+    '- "new line" = start a new line\n'
+    '- "number one/two/three" before items = numbered list\n'
+    '- "scratch that" = delete everything before it\n\n'
+    'Input: the weather is nice today\n'
+    'Output: The weather is nice today.\n\n'
+    'Input: bullet eggs bullet milk bullet bread\n'
+    'Output: - Eggs\n- Milk\n- Bread\n\n'
+    'Input: dear sarah new line thanks for your help new line best regards tom\n'
+    'Output: Dear Sarah,\nThanks for your help.\nBest regards,\nTom\n\n'
+    'Input: send me the file new line also check the budget\n'
+    'Output: Send me the file.\nAlso, check the budget.\n\n'
+    'Input: number one cats number two dogs number three fish\n'
+    'Output: 1. Cats\n2. Dogs\n3. Fish\n\n'
+    'Input: i want pizza scratch that actually i want pasta\n'
+    'Output: Actually, I want pasta.\n\n'
+    'Now clean up this transcription. Output the corrected text only:'
 )
 
 # llama-server config
