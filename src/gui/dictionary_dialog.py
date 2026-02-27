@@ -524,12 +524,7 @@ class DictionaryDialog(QDialog):
 
     def save_dictionary(self):
         """Save dictionary to config."""
-        # Filter out words with no variations
-        replacements = {
-            word: variations
-            for word, variations in self._data.items()
-            if variations
-        }
+        replacements = dict(self._data)
 
         self.config.set_dictionary_enabled(self.enabled_checkbox.isChecked())
         self.config.set_dictionary_replacements(replacements)

@@ -62,6 +62,12 @@ class TranscriptionWorker(QObject):
 class VTTApplication(QObject):
     """Main application controller."""
 
+    # Signals for thread-safe hotkey handling.
+    # Hotkey callbacks fire from background threads — these signals
+    # marshal execution to the main Qt thread via QueuedConnection.
+    _hotkey_pressed = Signal()
+    _hotkey_released = Signal()
+
     def __init__(self):
         super().__init__()
 
@@ -97,6 +103,10 @@ class VTTApplication(QObject):
         self.transcription_thread = None
         self.transcription_worker = None
 
+        # Connect hotkey signals to handlers (thread-safe marshaling)
+        self._hotkey_pressed.connect(self.on_hotkey_press)
+        self._hotkey_released.connect(self.on_hotkey_release)
+
         # Setup hotkey
         self.setup_hotkey()
 
@@ -108,8 +118,8 @@ class VTTApplication(QObject):
         try:
             self.hotkey_manager.register_hotkey(
                 hotkey,
-                on_press=self.on_hotkey_press,
-                on_release=self.on_hotkey_release
+                on_press=self._hotkey_pressed.emit,
+                on_release=self._hotkey_released.emit
             )
             self.logger.info(f"Hotkey registered: {hotkey}")
         except Exception as e:
@@ -121,10 +131,11 @@ class VTTApplication(QObject):
         """Called when hotkey is pressed - start recording."""
         try:
             self.logger.info("Hotkey pressed - starting recording")
-            self.audio_recorder.start_recording()
 
-            # Play start tone
+            # Play start tone before recording to avoid capturing it
             self.sound_effects.play_start_tone()
+
+            self.audio_recorder.start_recording()
 
             # Update UI
             if self.tray_icon:

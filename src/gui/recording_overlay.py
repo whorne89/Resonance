@@ -3,9 +3,8 @@ Recording overlay for Resonance.
 Floating pill-shaped widget showing recording/processing state with live waveform.
 """
 
-import numpy as np
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, Property
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QGuiApplication
 
 
@@ -26,7 +25,6 @@ class RecordingOverlay(QWidget):
     BOTTOM_MARGIN = 60
     BAR_COUNT = 7
     WAVEFORM_UPDATE_MS = 50
-    DOT_PULSE_MS = 40
 
     # Colors
     BG_COLOR = QColor(26, 26, 46, 217)       # #1a1a2e at ~85% opacity
@@ -54,9 +52,9 @@ class RecordingOverlay(QWidget):
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
+            | Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setFixedSize(self.PILL_WIDTH, self.PILL_HEIGHT)
 
         # Position at bottom center of primary screen
@@ -86,6 +84,7 @@ class RecordingOverlay(QWidget):
 
     def show_recording(self):
         """Show overlay in recording state."""
+        self._position_on_screen()
         self._state = "recording"
         self._bar_heights = [0.0] * self.BAR_COUNT
         self._target_heights = [0.0] * self.BAR_COUNT
