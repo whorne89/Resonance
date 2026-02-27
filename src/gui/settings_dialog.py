@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
     QButtonGroup
 )
-from PySide6.QtCore import Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QKeyEvent
+from PySide6.QtCore import Signal, QTimer, Qt, QUrl
+from PySide6.QtGui import QPalette, QColor, QKeyEvent, QDesktopServices
 
 from gui.dictionary_dialog import DictionaryDialog
 
@@ -222,6 +222,10 @@ class SettingsDialog(QDialog):
         typing_group = self.create_typing_group()
         layout.addWidget(typing_group)
 
+        # Processing device settings
+        device_group = self.create_device_group()
+        layout.addWidget(device_group)
+
         # Dictionary settings
         dictionary_group = self.create_dictionary_group()
         layout.addWidget(dictionary_group)
@@ -390,6 +394,52 @@ class SettingsDialog(QDialog):
         group.setLayout(layout)
         return group
 
+    def create_device_group(self):
+        """Create processing device configuration group."""
+        group = QGroupBox("Processing Device")
+        layout = QFormLayout()
+
+        # Detect CUDA availability
+        cuda_available = False
+        try:
+            import ctypes
+            ctypes.CDLL("nvcuda.dll")
+            cuda_available = True
+        except Exception:
+            pass
+
+        # CPU / GPU radio buttons
+        device_layout = QHBoxLayout()
+        self.device_cpu_radio = QRadioButton("CPU")
+        self.device_gpu_radio = QRadioButton("GPU (CUDA)")
+        self.device_button_group = QButtonGroup()
+        self.device_button_group.addButton(self.device_cpu_radio, 0)
+        self.device_button_group.addButton(self.device_gpu_radio, 1)
+        device_layout.addWidget(self.device_cpu_radio)
+        device_layout.addWidget(self.device_gpu_radio)
+        device_layout.addStretch()
+        layout.addRow("Device:", device_layout)
+
+        if not cuda_available:
+            self.device_gpu_radio.setEnabled(False)
+            self.device_gpu_radio.setToolTip("No NVIDIA GPU detected (nvcuda.dll not found)")
+
+        # Status label shown when GPU is selected
+        self.cuda_runtime_label = QLabel("")
+        self.cuda_runtime_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addRow("", self.cuda_runtime_label)
+
+        # Wire GPU radio to runtime check
+        self.device_gpu_radio.toggled.connect(self._check_cuda_runtime)
+
+        # Info
+        info_label = QLabel("GPU acceleration requires an NVIDIA GPU with CUDA drivers.")
+        info_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addRow("", info_label)
+
+        group.setLayout(layout)
+        return group
+
     def _check_cuda_runtime(self, checked):
         """Check for CUDA runtime libraries when GPU is selected.
 
@@ -397,12 +447,12 @@ class SettingsDialog(QDialog):
         Shows a warning and reverts to CPU if neither is found.
         """
         if not checked:
+            self.cuda_runtime_label.setText("")
             return
 
-        import ctypes
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
+        self.cuda_runtime_label.setText("Checking runtime libraries...")
 
+        import ctypes
         found = False
         for dll in ("cublas64_12.dll", "cublas64_13.dll"):
             try:
@@ -412,7 +462,13 @@ class SettingsDialog(QDialog):
             except OSError:
                 pass
 
-        if not found:
+        if found:
+            self.cuda_runtime_label.setText("Runtime libraries OK")
+            self.cuda_runtime_label.setStyleSheet("color: green; font-size: 10px;")
+        else:
+            self.cuda_runtime_label.setText("")
+            self.device_cpu_radio.setChecked(True)
+
             msg = QMessageBox(self)
             msg.setWindowTitle("CUDA Runtime Required")
             msg.setText(
@@ -476,6 +532,13 @@ class SettingsDialog(QDialog):
                     self.device_combo.setCurrentIndex(i)
                     break
 
+        # Processing device
+        device = self.config.get_device()
+        if device == "cuda":
+            self.device_gpu_radio.setChecked(True)
+        else:
+            self.device_cpu_radio.setChecked(True)
+
         # Typing method
         use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
         if use_clipboard:
@@ -531,10 +594,14 @@ class SettingsDialog(QDialog):
             # Get typing method
             use_clipboard = self.typing_paste_radio.isChecked()
 
+            # Get processing device
+            processing_device = "cuda" if self.device_gpu_radio.isChecked() else "cpu"
+
             # Save to config
             self.config.set_hotkey(hotkey)
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
+            self.config.set_device(processing_device)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
             self.config.save()
 

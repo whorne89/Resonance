@@ -82,6 +82,18 @@ class Transcriber:
             self.model = None  # Force reload
         self.load_model()
 
+    def change_device(self, device):
+        """
+        Change processing device and reload model.
+
+        Args:
+            device: 'cpu' or 'cuda'
+        """
+        with self._lock:
+            self.device = device
+            self.model = None  # Force reload
+        self.load_model()
+
     def transcribe(self, audio_data, language="en"):
         """
         Transcribe audio data to text.
