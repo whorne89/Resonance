@@ -52,9 +52,8 @@ src/models/
 src/resources/settings.json
 .resonance/
 
-# PyInstaller
-build/
-dist/
+# Testing
+.pytest_cache/
 
 # Claude Code
 .claude/
