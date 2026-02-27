@@ -37,8 +37,8 @@ src/
 ## Key Design Decisions
 - **App data stored relative to application directory** (not user home). Data lives in `<app_root>/.resonance/` so models, logs, and config stay on the same drive as the app.
 - **Custom dictionary** for post-transcription word replacement. Stored in config under `dictionary.replacements`. Case-insensitive matching, applied in `VTTApplication.apply_dictionary()`.
-- **No PyInstaller bundling currently** — the app runs directly as a Python script. Plan to package with PyInstaller when features stabilize.
-- **CPU only** — GPU support deferred. See GPU section below.
+- **No PyInstaller bundling currently** — the app runs directly as a Python script.
+- **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
 - **Single source of truth**: `version` field in `pyproject.toml` (currently 1.2.0)
@@ -53,16 +53,28 @@ src/
 5. KeyboardTyper.type_text() outputs to active window
 
 ## Whisper Models
-- Dropdown uses display-name → model-ID mapping with `QComboBox.addItem(name, userData=id)`
+- Dropdown uses display-name -> model-ID mapping with `QComboBox.addItem(name, userData=id)`
 - distil-whisper models use full HF repo IDs: `Systran/faster-distil-whisper-large-v3`
-- HF cache dir converts `/` → `--`: `models--Systran--faster-distil-whisper-large-v3`
+- HF cache dir converts `/` -> `--`: `models--Systran--faster-distil-whisper-large-v3`
 - `transcriber.is_model_downloaded()` handles both short names (`small`) and full repo IDs
+- **Model benchmarks (5s audio, Ryzen 3700X CPU)**:
+  - tiny: sub-second, decent accuracy, inconsistent punctuation
+  - base: sub-second, good accuracy
+  - small: ~2s, good accuracy
+  - distil-small.en: ~2s, good accuracy, English-optimized
+  - distil-large-v3: noticeably slower than distil-small, not worth the latency trade-off for dictation
+- **Current strategy**: tiny model + CPU post-processing for grammar/punctuation cleanup. Tiny is extremely fast and post-processing can fix accuracy gaps.
 
-## GPU Status — CPU Only For Now
-- **CUDA is ruled out** — CTranslate2 needs exact CUDA version match (cublas64_12.dll), doesn't bundle runtime, NVIDIA-only. Not viable for distribution.
-- **Future GPU path**: switch transcription engine to **whisper.cpp** (via pywhispercpp) with **Vulkan** backend. Vulkan runtime ships with all modern GPU drivers (NVIDIA, AMD, Intel). No user install needed.
-- **CPU performance is adequate**: 5s audio transcribes in ~2.2s on Ryzen 3700X with `small` model (0.44x real-time factor). GPU would be ~0.3s.
-- **Decision**: ship CPU-only, add GPU as a v2 feature after the app is packaged and stable.
+## GPU — Scrapped
+- **CUDA**: ruled out — CTranslate2 needs exact CUDA 12.x DLLs (cublas64_12.dll), user has CUDA 13.1. Not portable.
+- **Vulkan via pywhispercpp**: tried and reverted — pywhispercpp CPU is ~2x slower than faster-whisper (4.5s vs 2.2s for 5s audio). Unacceptable latency for dictation.
+- **Decision**: CPU-only with faster-whisper. GPU not needed — tiny model is already sub-second.
+
+## Next Up — Post-Processing
+- **Goal**: Add CPU-based post-processing after transcription to fix punctuation, capitalization, and minor word errors from tiny model
+- **Previous attempt**: llama-cpp-python on `feat/post-processing` branch — abandoned due to build/distribution issues
+- **Options to explore**: dedicated punctuation models, small quantized LLMs, rule-based cleanup
+- **Key constraint**: must be fast enough on CPU to not negate tiny model's speed advantage
 
 ## Config Location
 Settings stored at `<app_root>/.resonance/settings.json`
@@ -78,3 +90,4 @@ Settings stored at `<app_root>/.resonance/settings.json`
 
 ## Abandoned Work
 - **`feat/post-processing` branch** — grammar correction via llama-cpp-python; parked due to distribution complexity (no pre-built Python 3.12 wheels, CUDA build issues). Code preserved on branch.
+- **pywhispercpp (whisper.cpp)** — tried for Vulkan GPU support, reverted because CPU performance was ~2x slower than faster-whisper.

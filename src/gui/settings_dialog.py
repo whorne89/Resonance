@@ -390,67 +390,6 @@ class SettingsDialog(QDialog):
         group.setLayout(layout)
         return group
 
-    def create_device_group(self):
-        """Create processing device configuration group."""
-        group = QGroupBox("Processing Device")
-        layout = QFormLayout()
-
-        # Detect CUDA availability
-        cuda_available = False
-        try:
-            import ctypes
-            ctypes.CDLL("nvcuda.dll")
-            cuda_available = True
-        except Exception:
-            pass
-
-        # CPU / GPU radio buttons
-        device_layout = QHBoxLayout()
-        self.device_cpu_radio = QRadioButton("CPU")
-        self.device_gpu_radio = QRadioButton("GPU (CUDA)")
-        self.device_button_group = QButtonGroup()
-        self.device_button_group.addButton(self.device_cpu_radio, 0)
-        self.device_button_group.addButton(self.device_gpu_radio, 1)
-        device_layout.addWidget(self.device_cpu_radio)
-        device_layout.addWidget(self.device_gpu_radio)
-        device_layout.addStretch()
-        layout.addRow("Device:", device_layout)
-
-        if not cuda_available:
-            self.device_gpu_radio.setEnabled(False)
-            self.device_gpu_radio.setToolTip("No NVIDIA GPU detected (nvcuda.dll not found)")
-
-        # Status label shown when GPU is selected
-        self.cuda_runtime_label = QLabel("")
-        self.cuda_runtime_label.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addRow("", self.cuda_runtime_label)
-
-        # Wire GPU radio to runtime check
-        self.device_gpu_radio.toggled.connect(self._check_cuda_runtime)
-
-        # Info
-        info_label = QLabel("GPU acceleration requires an NVIDIA GPU with CUDA drivers.")
-        info_label.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addRow("", info_label)
-
-        group.setLayout(layout)
-        return group
-
-    def _check_cuda_runtime(self, checked):
-        """Check for CUDA runtime libraries when GPU is selected.
-
-        Tries cublas64_12.dll (CUDA 12.x) and cublas64_13.dll (CUDA 13.x).
-        Shows a warning and reverts to CPU if neither is found.
-        """
-        if not checked:
-            self.cuda_runtime_label.setText("")
-            return
-
-        # nvcuda.dll already confirmed present (GPU radio only enabled if found)
-        # CTranslate2 (faster-whisper) bundles its own CUDA runtime — no system DLL check needed
-        self.cuda_runtime_label.setText("GPU ready")
-        self.cuda_runtime_label.setStyleSheet("color: green; font-size: 10px;")
-
     def open_dictionary(self):
         """Open the custom dictionary editor."""
         dialog = DictionaryDialog(

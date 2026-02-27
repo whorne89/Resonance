@@ -198,11 +198,11 @@ class ConfigManager:
         self.set("whisper", "model_size", value=size)
 
     def get_device(self):
-        """Get processing device ('cpu' or 'cuda')."""
+        """Get processing device ('cpu' or 'gpu')."""
         return self.get("whisper", "device", default="cpu")
 
     def set_device(self, device):
-        """Set processing device ('cpu' or 'cuda')."""
+        """Set processing device ('cpu' or 'gpu')."""
         self.set("whisper", "device", value=device)
 
     def get_audio_device(self):

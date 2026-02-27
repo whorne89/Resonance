@@ -54,8 +54,6 @@ class Transcriber:
             self.loading = True
             try:
                 self.logger.info(f"Loading Whisper model '{self.model_size}' from {self.models_dir}...")
-                # Download and load model from HuggingFace
-                # Models are cached locally in ~/.resonance/models/
                 self.model = WhisperModel(
                     self.model_size,
                     device=self.device,
@@ -114,10 +112,6 @@ class Transcriber:
 
         try:
             self.logger.info(f"Starting transcription of {len(audio_data)} samples...")
-            # Transcribe with faster-whisper
-            # Note: vad_filter disabled for bundled EXE compatibility
-            # (VAD requires silero_vad.onnx which isn't easily bundled)
-            # beam_size=5 is a good balance of speed and accuracy
             segments, info = self.model.transcribe(
                 audio_data,
                 language=language,
@@ -154,7 +148,6 @@ class Transcriber:
             bool: True if model is downloaded, False otherwise
         """
         if '/' in model_size:
-            # Full HF repo ID: convert slashes to "--" for the cache directory name
             cache_name = "models--" + model_size.replace('/', '--')
         else:
             cache_name = f"models--Systran--faster-whisper-{model_size}"

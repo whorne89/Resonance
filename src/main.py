@@ -72,7 +72,6 @@ class VTTApplication(QObject):
         self.audio_recorder = AudioRecorder()
         self.transcriber = Transcriber(
             model_size=self.config.get_model_size(),
-            device=self.config.get_device(),
         )
         self.keyboard_typer = KeyboardTyper(
             typing_speed=self.config.get_typing_speed(),
@@ -471,11 +470,6 @@ class VTTApplication(QObject):
         model_size = self.config.get_model_size()
         if model_size != self.transcriber.model_size:
             self.transcriber.change_model(model_size)
-
-        # Update processing device
-        device = self.config.get_device()
-        if device != self.transcriber.device:
-            self.transcriber.change_device(device)
 
         # Update typing speed and method
         self.keyboard_typer.set_typing_speed(self.config.get_typing_speed())
