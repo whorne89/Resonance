@@ -22,6 +22,7 @@ def set_windows_app_id():
 
 from core.audio_recorder import AudioRecorder
 from core.transcriber import Transcriber
+from core.post_processor import PostProcessor
 from core.keyboard_typer import KeyboardTyper
 from core.hotkey_manager import HotkeyManager
 from gui.system_tray import SystemTrayIcon
@@ -36,20 +37,29 @@ class TranscriptionWorker(QObject):
     finished = Signal(str)  # Emits transcribed text
     error = Signal(str)  # Emits error message
 
-    def __init__(self, transcriber, audio_data, logger=None):
+    def __init__(self, transcriber, audio_data, post_processor=None, logger=None):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
+        self.post_processor = post_processor
         self.logger = logger
 
     def run(self):
-        """Run transcription."""
+        """Run transcription and optional post-processing."""
         try:
             if self.logger:
                 self.logger.info("Starting transcription...")
             text = self.transcriber.transcribe(self.audio_data)
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
+
+            if text and self.post_processor:
+                if self.logger:
+                    self.logger.info("Running post-processing...")
+                text = self.post_processor.process(text)
+                if self.logger:
+                    self.logger.info(f"Post-processing finished, got {len(text)} characters")
+
             self.finished.emit(text)
         except Exception as e:
             if self.logger:
@@ -78,6 +88,12 @@ class VTTApplication(QObject):
             use_clipboard=self.config.get("typing", "use_clipboard_fallback", default=False)
         )
         self.hotkey_manager = HotkeyManager()
+
+        self.post_processor = None
+        if self.config.get_post_processing_enabled():
+            self.post_processor = PostProcessor(
+                backend=self.config.get_post_processing_backend()
+            )
 
         # Set audio device from config
         device_idx = self.config.get_audio_device()
@@ -188,7 +204,9 @@ class VTTApplication(QObject):
 
         # Create worker and thread
         self.transcription_thread = QThread()
-        self.transcription_worker = TranscriptionWorker(self.transcriber, audio_data, self.logger)
+        self.transcription_worker = TranscriptionWorker(
+            self.transcriber, audio_data, self.post_processor, self.logger
+        )
 
         # Move worker to thread
         self.transcription_worker.moveToThread(self.transcription_thread)
@@ -471,6 +489,16 @@ class VTTApplication(QObject):
         if model_size != self.transcriber.model_size:
             self.transcriber.change_model(model_size)
 
+        # Update post-processing
+        pp_enabled = self.config.get_post_processing_enabled()
+        if pp_enabled and self.post_processor is None:
+            self.post_processor = PostProcessor(
+                backend=self.config.get_post_processing_backend()
+            )
+        elif not pp_enabled and self.post_processor is not None:
+            self.post_processor.shutdown()
+            self.post_processor = None
+
         # Update typing speed and method
         self.keyboard_typer.set_typing_speed(self.config.get_typing_speed())
         use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
@@ -486,6 +514,9 @@ class VTTApplication(QObject):
         # Stop recording if active
         if self.audio_recorder.is_recording():
             self.audio_recorder.stop_recording()
+
+        if self.post_processor:
+            self.post_processor.shutdown()
 
         # Quit application
         QApplication.quit()
