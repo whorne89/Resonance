@@ -4,10 +4,10 @@ Allows configuration of hotkey, model, audio device, etc.
 """
 
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
-    QButtonGroup, QCheckBox
+    QButtonGroup
 )
 from PySide6.QtCore import Signal, QTimer, Qt
 from PySide6.QtGui import QPalette, QColor, QKeyEvent
@@ -226,10 +226,6 @@ class SettingsDialog(QDialog):
         dictionary_group = self.create_dictionary_group()
         layout.addWidget(dictionary_group)
 
-        # Post-processing settings
-        postproc_group = self.create_postproc_group()
-        layout.addWidget(postproc_group)
-
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -392,78 +388,6 @@ class SettingsDialog(QDialog):
         group.setLayout(layout)
         return group
 
-    def create_postproc_group(self):
-        """Create post-processing configuration group."""
-        group = QGroupBox("Post-Processing (Experimental)")
-        layout = QVBoxLayout()
-
-        self.postproc_enabled = QCheckBox("Enable AI post-processing")
-        self.postproc_enabled.setToolTip(
-            "Uses a small local AI model to fix punctuation, grammar, "
-            "and interpret formatting commands after transcription."
-        )
-        layout.addWidget(self.postproc_enabled)
-
-        info_label = QLabel(
-            "Cleans up punctuation, capitalization, and handles spoken commands\n"
-            "like 'new line', 'bullet', 'scratch that'. Requires model download."
-        )
-        info_label.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(info_label)
-
-        # Download button and status
-        download_layout = QHBoxLayout()
-
-        self.postproc_status_label = QLabel("")
-        self.postproc_status_label.setStyleSheet("font-size: 10px;")
-        download_layout.addWidget(self.postproc_status_label)
-
-        download_layout.addStretch()
-
-        self.postproc_download_button = QPushButton("Download Model")
-        self.postproc_download_button.clicked.connect(self._download_postproc_model)
-        download_layout.addWidget(self.postproc_download_button)
-
-        layout.addLayout(download_layout)
-
-        group.setLayout(layout)
-        return group
-
-    def _update_postproc_status(self):
-        """Update post-processing model status display."""
-        from core.post_processor import PostProcessor
-        backend = self.config.get_post_processing_backend()
-        pp = PostProcessor(backend=backend)
-        if pp.is_model_downloaded():
-            self.postproc_status_label.setText("Model ready")
-            self.postproc_status_label.setStyleSheet("color: green; font-size: 10px;")
-            self.postproc_download_button.setEnabled(False)
-            self.postproc_download_button.setText("Downloaded")
-        else:
-            self.postproc_status_label.setText("Model not downloaded")
-            self.postproc_status_label.setStyleSheet("color: orange; font-size: 10px;")
-
-    def _download_postproc_model(self):
-        """Download the post-processing model."""
-        from core.post_processor import PostProcessor
-
-        self.postproc_download_button.setEnabled(False)
-        self.postproc_status_label.setText("Downloading...")
-        self.postproc_status_label.setStyleSheet("color: blue; font-size: 10px;")
-        QApplication.processEvents()
-
-        try:
-            backend = self.config.get_post_processing_backend()
-            pp = PostProcessor(backend=backend)
-            pp.download_model()
-            self.postproc_status_label.setText("Model ready")
-            self.postproc_status_label.setStyleSheet("color: green; font-size: 10px;")
-            self.postproc_download_button.setText("Downloaded")
-        except Exception as e:
-            self.postproc_status_label.setText(f"Download failed: {e}")
-            self.postproc_status_label.setStyleSheet("color: red; font-size: 10px;")
-            self.postproc_download_button.setEnabled(True)
-
     def open_dictionary(self):
         """Open the custom dictionary editor."""
         dialog = DictionaryDialog(
@@ -520,10 +444,6 @@ class SettingsDialog(QDialog):
         else:
             self.typing_char_radio.setChecked(True)
 
-        # Post-processing
-        self.postproc_enabled.setChecked(self.config.get_post_processing_enabled())
-        self._update_postproc_status()
-
     def save_settings(self):
         """Save settings and emit signal."""
         try:
@@ -577,7 +497,6 @@ class SettingsDialog(QDialog):
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
-            self.config.set_post_processing_enabled(self.postproc_enabled.isChecked())
             self.config.save()
 
             # Emit signal

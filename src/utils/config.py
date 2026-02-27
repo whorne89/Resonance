@@ -205,22 +205,6 @@ class ConfigManager:
         """Set processing device ('cpu' or 'gpu')."""
         self.set("whisper", "device", value=device)
 
-    def get_post_processing_enabled(self):
-        """Get whether post-processing is enabled."""
-        return self.get("post_processing", "enabled", default=False)
-
-    def set_post_processing_enabled(self, enabled):
-        """Set whether post-processing is enabled."""
-        self.set("post_processing", "enabled", value=enabled)
-
-    def get_post_processing_backend(self):
-        """Get post-processing backend ('llama-server' or 'onnx')."""
-        return self.get("post_processing", "backend", default="llama-server")
-
-    def set_post_processing_backend(self, backend):
-        """Set post-processing backend."""
-        self.set("post_processing", "backend", value=backend)
-
     def get_audio_device(self):
         """Get audio device index."""
         return self.get("audio", "device_index", default=None)

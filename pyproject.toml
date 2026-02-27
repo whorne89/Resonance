@@ -27,10 +27,6 @@ dev = [
     "pyinstaller>=5.13.0",
     "pillow>=10.0.0",
 ]
-postproc = [
-    "onnxruntime-genai>=0.12.0",
-]
-
 [project.scripts]
 resonance = "src.main:main"
 
