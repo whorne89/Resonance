@@ -29,6 +29,7 @@ class AudioRecorder:
         self.stream = None
         self.device = None  # None = use default device
         self.logger = get_logger()
+        self.current_rms = 0.0
 
     def set_device(self, device_index):
         """
@@ -66,6 +67,7 @@ class AudioRecorder:
                 self.logger.warning(f"Audio recording status: {status}")
             if self.recording:
                 self.audio_queue.put(indata.copy())
+                self.current_rms = float(np.sqrt(np.mean(indata ** 2)))
 
         try:
             self.stream = sd.InputStream(
@@ -92,6 +94,7 @@ class AudioRecorder:
             return None
 
         self.recording = False
+        self.current_rms = 0.0
 
         # Stop and close the stream
         if self.stream:
