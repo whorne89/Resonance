@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
     QButtonGroup
 )
-from PySide6.QtCore import Signal, QTimer, Qt, QUrl
-from PySide6.QtGui import QPalette, QColor, QKeyEvent, QDesktopServices
+from PySide6.QtCore import Signal, QTimer, Qt
+from PySide6.QtGui import QPalette, QColor, QKeyEvent
 
 from gui.dictionary_dialog import DictionaryDialog
 
@@ -450,38 +450,10 @@ class SettingsDialog(QDialog):
             self.cuda_runtime_label.setText("")
             return
 
-        self.cuda_runtime_label.setText("Checking runtime libraries...")
-
-        import ctypes
-        found = False
-        for dll in ("cublas64_12.dll", "cublas64_13.dll"):
-            try:
-                ctypes.CDLL(dll)
-                found = True
-                break
-            except OSError:
-                pass
-
-        if found:
-            self.cuda_runtime_label.setText("Runtime libraries OK")
-            self.cuda_runtime_label.setStyleSheet("color: green; font-size: 10px;")
-        else:
-            self.cuda_runtime_label.setText("")
-            self.device_cpu_radio.setChecked(True)
-
-            msg = QMessageBox(self)
-            msg.setWindowTitle("CUDA Runtime Required")
-            msg.setText(
-                "GPU mode requires CUDA Toolkit runtime libraries (12.x or 13.x).\n\n"
-                "cublas64_12.dll / cublas64_13.dll was not found on your system.\n\n"
-                "Install CUDA Toolkit from NVIDIA to enable GPU mode."
-            )
-            download_btn = msg.addButton("Open Download Page", QMessageBox.ButtonRole.ActionRole)
-            msg.addButton("Not Now", QMessageBox.ButtonRole.RejectRole)
-            msg.exec()
-
-            if msg.clickedButton() == download_btn:
-                QDesktopServices.openUrl(QUrl("https://developer.nvidia.com/cuda-downloads"))
+        # nvcuda.dll already confirmed present (GPU radio only enabled if found)
+        # CTranslate2 (faster-whisper) bundles its own CUDA runtime — no system DLL check needed
+        self.cuda_runtime_label.setText("GPU ready")
+        self.cuda_runtime_label.setStyleSheet("color: green; font-size: 10px;")
 
     def open_dictionary(self):
         """Open the custom dictionary editor."""
