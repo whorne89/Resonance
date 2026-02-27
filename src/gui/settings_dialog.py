@@ -298,7 +298,6 @@ class SettingsDialog(QDialog):
             ("base",            "base"),
             ("small",           "small"),
             ("distil-small.en", "Systran/faster-distil-whisper-small.en"),
-            ("distil-large-v3", "Systran/faster-distil-whisper-large-v3"),
         ]
         for display_name, model_id in models:
             self.model_combo.addItem(display_name, userData=model_id)
@@ -309,8 +308,7 @@ class SettingsDialog(QDialog):
             "tiny: Fastest, lower accuracy (~70MB)\n"
             "base: Fast, decent accuracy (~140MB)\n"
             "small: Balanced (recommended) (~500MB)\n"
-            "distil-small.en: Fast, English only (~250MB)\n"
-            "distil-large-v3: High accuracy, ~6x faster than large (~800MB)"
+            "distil-small.en: Fast, English only (~250MB)"
         )
         info_label.setStyleSheet("color: gray; font-size: 10px;")
         layout.addRow("", info_label)
