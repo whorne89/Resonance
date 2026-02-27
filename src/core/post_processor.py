@@ -38,7 +38,7 @@ GGUF_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 GGUF_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
 GGUF_HF_URL = f"https://huggingface.co/{GGUF_REPO}/resolve/main/{GGUF_FILENAME}"
 
-LLAMA_CPP_RELEASE_TAG = "b4722"
+LLAMA_CPP_RELEASE_TAG = "b8175"
 LLAMA_CPP_ZIP = f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-win-cpu-x64.zip"
 LLAMA_CPP_URL = (
     f"https://github.com/ggml-org/llama.cpp/releases/download/"
