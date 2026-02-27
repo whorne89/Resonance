@@ -129,8 +129,10 @@ class RecordingOverlay(QWidget):
         if self._audio_recorder is not None:
             rms = self._audio_recorder.current_rms
 
-        # Scale RMS to 0-1 range (calibrated for speech)
-        level = min(1.0, rms * 8.0)
+        # Scale RMS to 0-1 range (calibrated for normal speech levels).
+        # Settings dialog uses rms * 3500 for 0-100 scale; this is equivalent
+        # tuning so normal speech produces ~30-70% bar height.
+        level = min(1.0, rms * 50.0)
 
         # Shift bars left, add new level on the right
         self._target_heights = self._target_heights[1:] + [level]

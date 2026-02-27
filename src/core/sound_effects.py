@@ -51,7 +51,10 @@ class SoundEffects:
         """Play a tone in a background thread to avoid blocking."""
         def _play():
             try:
-                sd.play(tone, samplerate=self.sample_rate, blocking=True)
+                # Use explicit OutputStream instead of sd.play() to avoid
+                # global state conflicts with the recording InputStream.
+                with sd.OutputStream(samplerate=self.sample_rate, channels=1, dtype='float32') as stream:
+                    stream.write(tone.reshape(-1, 1))
             except Exception as e:
                 self.logger.warning(f"Sound playback failed: {e}")
 
