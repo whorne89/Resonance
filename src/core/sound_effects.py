@@ -3,15 +3,18 @@ Sound effects for Resonance.
 Generates short tones as WAV files and plays via Windows native audio API.
 Uses SND_FILENAME | SND_ASYNC for reliable non-blocking playback that
 doesn't conflict with sounddevice recording.
+
+Custom sounds: Drop your own start.wav / stop.wav into .resonance/sounds/
+to override the generated defaults.
 """
 
 import os
 import struct
-import tempfile
 import numpy as np
 import winsound
 
 from utils.logger import get_logger
+from utils.resource_path import get_app_data_path
 
 
 class SoundEffects:
@@ -22,15 +25,17 @@ class SoundEffects:
         self.volume = volume
         self.logger = get_logger()
 
-        # Write tones as WAV files — winsound needs SND_FILENAME for async.
-        self._temp_dir = tempfile.mkdtemp(prefix='resonance_')
+        # Sound files live in .resonance/sounds/
+        sounds_dir = get_app_data_path("sounds")
 
-        # C5 (bright) for start, G4 (settling) for stop — perfect 5th.
-        self._start_path = os.path.join(self._temp_dir, 'start.wav')
-        self._stop_path = os.path.join(self._temp_dir, 'stop.wav')
+        self._start_path = os.path.join(sounds_dir, 'start.wav')
+        self._stop_path = os.path.join(sounds_dir, 'stop.wav')
 
-        self._write_wav(self._start_path, self._generate_piano_tone(freq=523))
-        self._write_wav(self._stop_path, self._generate_piano_tone(freq=392))
+        # Only generate defaults if user hasn't provided custom WAV files
+        if not os.path.exists(self._start_path):
+            self._write_wav(self._start_path, self._generate_piano_tone(freq=523))
+        if not os.path.exists(self._stop_path):
+            self._write_wav(self._stop_path, self._generate_piano_tone(freq=392))
 
     def _generate_piano_tone(self, freq, duration=0.6):
         """Generate a piano-like tone with room reverb.
