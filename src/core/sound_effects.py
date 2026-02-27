@@ -25,47 +25,71 @@ class SoundEffects:
         # Write tones as WAV files — winsound needs SND_FILENAME for async.
         self._temp_dir = tempfile.mkdtemp(prefix='resonance_')
 
-        # C5 (warm-bright) for start, G4 (warm-low) for stop — perfect 5th.
+        # C5 (bright) for start, G4 (settling) for stop — perfect 5th.
         self._start_path = os.path.join(self._temp_dir, 'start.wav')
         self._stop_path = os.path.join(self._temp_dir, 'stop.wav')
 
-        self._write_wav(self._start_path, self._generate_warm_tone(freq=523, duration=0.35))
-        self._write_wav(self._stop_path, self._generate_warm_tone(freq=392, duration=0.35))
+        self._write_wav(self._start_path, self._generate_piano_tone(freq=523))
+        self._write_wav(self._stop_path, self._generate_piano_tone(freq=392))
 
-    def _generate_warm_tone(self, freq, duration):
-        """Generate a warm synth pad tone with soft attack and release.
+    def _generate_piano_tone(self, freq, duration=0.6):
+        """Generate a piano-like tone with room reverb.
 
-        Uses detuned harmonics for chorus-like width, and a smooth
-        attack-sustain-release envelope for that analog synth character.
+        Models piano string physics: sharp hammer attack, harmonics with
+        inharmonicity (upper partials slightly sharp from string stiffness),
+        and per-partial decay rates. Reverb via simulated early reflections.
         """
         sr = self.sample_rate
         n_samples = int(sr * duration)
         t = np.linspace(0, duration, n_samples, endpoint=False)
 
-        # Warm pad: fundamental + slightly detuned harmonics for width
-        tone = np.sin(2 * np.pi * freq * t)
-        tone += 0.45 * np.sin(2 * np.pi * freq * 2.003 * t)   # detuned octave
-        tone += 0.20 * np.sin(2 * np.pi * freq * 2.999 * t)   # detuned 12th
-        tone += 0.10 * np.sin(2 * np.pi * freq * 4.002 * t)   # detuned 2nd octave
+        # Piano partials: (harmonic_number, amplitude, decay_rate)
+        # Higher harmonics are quieter and decay faster
+        inharmonicity = 0.0004
+        partials = [
+            (1, 1.00, 5),
+            (2, 0.65, 7),
+            (3, 0.35, 9),
+            (4, 0.20, 12),
+            (5, 0.12, 15),
+            (6, 0.06, 18),
+        ]
 
-        # Normalize then apply volume
+        tone = np.zeros(n_samples)
+        for n, amp, decay in partials:
+            # Piano inharmonicity: f_n = n * f * sqrt(1 + B*n^2)
+            partial_freq = n * freq * np.sqrt(1 + inharmonicity * n * n)
+            tone += amp * np.sin(2 * np.pi * partial_freq * t) * np.exp(-t * decay)
+
+        # Sharp attack (3ms) — hammer strike
+        attack_n = int(sr * 0.003)
+        if attack_n > 0:
+            tone[:attack_n] *= np.linspace(0, 1, attack_n)
+
+        # Normalize before reverb
         peak = np.max(np.abs(tone))
         if peak > 0:
-            tone = tone / peak * self.volume
+            tone = tone / peak
 
-        # ASR envelope: soft attack, brief sustain, gentle release
-        attack_n = int(sr * 0.025)    # 25ms
-        sustain_n = int(sr * 0.10)    # 100ms
-        release_n = n_samples - attack_n - sustain_n
+        # Room reverb: early reflections at decreasing amplitude
+        output = tone.copy()
+        reflections = [
+            (0.035, 0.25),   # 35ms — first wall
+            (0.070, 0.18),   # 70ms — opposite wall
+            (0.120, 0.10),   # 120ms — room fill
+            (0.180, 0.06),   # 180ms — reverb tail
+        ]
+        for delay_s, amp in reflections:
+            d = int(sr * delay_s)
+            if d < n_samples:
+                output[d:] += tone[:n_samples - d] * amp
 
-        envelope = np.concatenate([
-            0.5 * (1 - np.cos(np.linspace(0, np.pi, attack_n))),
-            np.ones(sustain_n),
-            0.5 * (1 + np.cos(np.linspace(0, np.pi, max(1, release_n)))),
-        ])[:n_samples]
+        # Final normalize and apply volume
+        peak = np.max(np.abs(output))
+        if peak > 0:
+            output = output / peak * self.volume
 
-        tone *= envelope
-        return tone
+        return output
 
     def _write_wav(self, path, tone):
         """Write tone data to a 16-bit mono WAV file."""
