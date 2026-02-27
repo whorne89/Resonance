@@ -128,8 +128,10 @@ class PostProcessor:
             return ""
 
         if not self._loaded:
-            self.logger.warning("PostProcessor not loaded, returning text unchanged")
-            return raw_text
+            self.load_model()
+            if not self._loaded:
+                self.logger.warning("PostProcessor not loaded, returning text unchanged")
+                return raw_text
 
         try:
             if self.backend == "llama-server":
