@@ -135,14 +135,18 @@ class Transcriber:
         Check if a specific model is already downloaded.
 
         Args:
-            model_size: Size of the model to check (tiny, base, small, medium, large)
+            model_size: Model ID — either a short name ("small") or a full
+                HuggingFace repo ID ("Systran/faster-distil-whisper-large-v3").
 
         Returns:
             bool: True if model is downloaded, False otherwise
         """
-        # Check if the model directory exists
-        # faster-whisper uses HuggingFace cache format: models--Systran--faster-whisper-{size}
-        model_path = os.path.join(self.models_dir, f"models--Systran--faster-whisper-{model_size}")
+        if '/' in model_size:
+            # Full HF repo ID: convert slashes to "--" for the cache directory name
+            cache_name = "models--" + model_size.replace('/', '--')
+        else:
+            cache_name = f"models--Systran--faster-whisper-{model_size}"
+        model_path = os.path.join(self.models_dir, cache_name)
         exists = os.path.exists(model_path) and os.path.isdir(model_path)
         self.logger.info(f"Checking model {model_size}: path={model_path}, exists={exists}")
         return exists
@@ -161,9 +165,9 @@ class Transcriber:
         model_info = {
             "tiny": {"size_mb": 70, "description": "Fastest, lower accuracy"},
             "base": {"size_mb": 140, "description": "Fast, decent accuracy"},
-            "small": {"size_mb": 500, "description": "Balanced (recommended)"},
-            "medium": {"size_mb": 1500, "description": "Better accuracy"},
-            "large": {"size_mb": 3000, "description": "Best accuracy"}
+            "small": {"size_mb": 500, "description": "Balanced"},
+            "Systran/faster-distil-whisper-small.en": {"size_mb": 250, "description": "Fast, English only"},
+            "Systran/faster-distil-whisper-large-v3": {"size_mb": 800, "description": "High accuracy, ~6x faster than large"},
         }
         return model_info.get(model_size, {"size_mb": 0, "description": "Unknown"})
 

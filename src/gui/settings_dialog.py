@@ -289,8 +289,15 @@ class SettingsDialog(QDialog):
 
         # Model size dropdown
         self.model_combo = QComboBox()
-        models = ["tiny", "base", "small", "medium", "large"]
-        self.model_combo.addItems(models)
+        models = [
+            ("tiny",            "tiny"),
+            ("base",            "base"),
+            ("small",           "small"),
+            ("distil-small.en", "Systran/faster-distil-whisper-small.en"),
+            ("distil-large-v3", "Systran/faster-distil-whisper-large-v3"),
+        ]
+        for display_name, model_id in models:
+            self.model_combo.addItem(display_name, userData=model_id)
         layout.addRow("Model Size:", self.model_combo)
 
         # Model info
@@ -298,8 +305,8 @@ class SettingsDialog(QDialog):
             "tiny: Fastest, lower accuracy (~70MB)\n"
             "base: Fast, decent accuracy (~140MB)\n"
             "small: Balanced (recommended) (~500MB)\n"
-            "medium: Better accuracy (~1.5GB)\n"
-            "large: Best accuracy (~3GB)"
+            "distil-small.en: Fast, English only (~250MB)\n"
+            "distil-large-v3: High accuracy, ~6x faster than large (~800MB)"
         )
         info_label.setStyleSheet("color: gray; font-size: 10px;")
         layout.addRow("", info_label)
@@ -383,6 +390,43 @@ class SettingsDialog(QDialog):
         group.setLayout(layout)
         return group
 
+    def _check_cuda_runtime(self, checked):
+        """Check for CUDA runtime libraries when GPU is selected.
+
+        Tries cublas64_12.dll (CUDA 12.x) and cublas64_13.dll (CUDA 13.x).
+        Shows a warning and reverts to CPU if neither is found.
+        """
+        if not checked:
+            return
+
+        import ctypes
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        found = False
+        for dll in ("cublas64_12.dll", "cublas64_13.dll"):
+            try:
+                ctypes.CDLL(dll)
+                found = True
+                break
+            except OSError:
+                pass
+
+        if not found:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("CUDA Runtime Required")
+            msg.setText(
+                "GPU mode requires CUDA Toolkit runtime libraries (12.x or 13.x).\n\n"
+                "cublas64_12.dll / cublas64_13.dll was not found on your system.\n\n"
+                "Install CUDA Toolkit from NVIDIA to enable GPU mode."
+            )
+            download_btn = msg.addButton("Open Download Page", QMessageBox.ButtonRole.ActionRole)
+            msg.addButton("Not Now", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+
+            if msg.clickedButton() == download_btn:
+                QDesktopServices.openUrl(QUrl("https://developer.nvidia.com/cuda-downloads"))
+
     def open_dictionary(self):
         """Open the custom dictionary editor."""
         dialog = DictionaryDialog(
@@ -417,7 +461,7 @@ class SettingsDialog(QDialog):
 
         # Model size
         model_size = self.config.get_model_size()
-        index = self.model_combo.findText(model_size)
+        index = self.model_combo.findData(model_size)
         if index >= 0:
             self.model_combo.setCurrentIndex(index)
 
@@ -444,7 +488,7 @@ class SettingsDialog(QDialog):
         try:
             # Get values from UI
             hotkey = self.hotkey_display.text().strip()
-            model_size = self.model_combo.currentText()
+            model_size = self.model_combo.currentData()
             device_idx = self.device_combo.currentData()
 
             # Validate hotkey (just check it's not empty)

@@ -168,6 +168,12 @@ class SystemTrayIcon(QSystemTrayIcon):
 
     def show_about(self):
         """Show about dialog window."""
+        from importlib.metadata import version as pkg_version, PackageNotFoundError
+        try:
+            app_version = pkg_version("resonance")
+        except PackageNotFoundError:
+            app_version = "dev"
+
         about_text = (
             "Resonance - Voice to Text Application\n\n"
             "Resonance is a voice-to-text application that is toggled\n"
@@ -176,10 +182,9 @@ class SystemTrayIcon(QSystemTrayIcon):
             "Uses local Whisper AI - no internet required,\n"
             "completely private and secure.\n\n"
             "Created by William Horne\n\n"
-            "Version 1.1.1"
+            f"Version {app_version}"
         )
 
-        # Create and show About dialog
         msg_box = QMessageBox()
         msg_box.setWindowTitle("About Resonance")
         msg_box.setText(about_text)
