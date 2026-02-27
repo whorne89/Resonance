@@ -23,6 +23,8 @@ from core.transcriber import Transcriber
 from core.keyboard_typer import KeyboardTyper
 from core.hotkey_manager import HotkeyManager
 from core.dictionary import DictionaryProcessor
+from core.sound_effects import SoundEffects
+from gui.recording_overlay import RecordingOverlay
 from gui.system_tray import SystemTrayIcon
 from gui.settings_dialog import SettingsDialog
 from utils.config import ConfigManager
@@ -79,6 +81,7 @@ class VTTApplication(QObject):
         )
         self.hotkey_manager = HotkeyManager()
         self.dictionary = DictionaryProcessor(self.config, self.logger)
+        self.sound_effects = SoundEffects()
 
         # Set audio device from config
         device_idx = self.config.get_audio_device()
@@ -88,6 +91,7 @@ class VTTApplication(QObject):
         # GUI components
         self.tray_icon = None
         self.settings_dialog = None
+        self.overlay = None  # Created in main() after QApplication exists
 
         # Threading
         self.transcription_thread = None
@@ -119,9 +123,14 @@ class VTTApplication(QObject):
             self.logger.info("Hotkey pressed - starting recording")
             self.audio_recorder.start_recording()
 
+            # Play start tone
+            self.sound_effects.play_start_tone()
+
             # Update UI
             if self.tray_icon:
                 self.tray_icon.set_recording_state()
+            if self.overlay:
+                self.overlay.show_recording()
 
         except Exception as e:
             self.logger.error(f"Failed to start recording: {e}")
@@ -136,10 +145,15 @@ class VTTApplication(QObject):
             # Stop recording and get audio data
             audio_data = self.audio_recorder.stop_recording()
 
+            # Play stop tone
+            self.sound_effects.play_stop_tone()
+
             if audio_data is None or len(audio_data) == 0:
                 self.logger.warning("No audio data recorded")
                 if self.tray_icon:
                     self.tray_icon.set_idle_state()
+                if self.overlay:
+                    self.overlay.hide_overlay()
                 return
 
             self.logger.info(f"Audio recorded: {len(audio_data)} samples")
@@ -147,6 +161,8 @@ class VTTApplication(QObject):
             # Update UI to transcribing state
             if self.tray_icon:
                 self.tray_icon.set_transcribing_state()
+            if self.overlay:
+                self.overlay.show_processing()
 
             # Run transcription in background thread
             self.start_transcription(audio_data)
@@ -156,6 +172,8 @@ class VTTApplication(QObject):
             if self.tray_icon:
                 self.tray_icon.show_error(f"Processing failed: {e}")
                 self.tray_icon.set_idle_state()
+            if self.overlay:
+                self.overlay.hide_overlay()
 
     def start_transcription(self, audio_data):
         """
@@ -255,6 +273,8 @@ class VTTApplication(QObject):
                 self.logger.warning("Transcription returned empty text")
 
             # Reset UI
+            if self.overlay:
+                self.overlay.hide_overlay()
             if self.tray_icon:
                 self.tray_icon.set_idle_state()
         finally:
@@ -271,6 +291,8 @@ class VTTApplication(QObject):
         self.logger.error(f"Transcription error: {error_msg}")
 
         try:
+            if self.overlay:
+                self.overlay.hide_overlay()
             if self.tray_icon:
                 self.tray_icon.show_error(f"Transcription failed: {error_msg}")
                 self.tray_icon.set_idle_state()
@@ -383,6 +405,11 @@ def main():
 
     # Create application controller
     vtt_app = VTTApplication()
+
+    # Create recording overlay
+    overlay = RecordingOverlay()
+    overlay.set_audio_recorder(vtt_app.audio_recorder)
+    vtt_app.overlay = overlay
 
     # Create and setup system tray with formatted hotkey
     tray_icon = SystemTrayIcon(hotkey_display=vtt_app.config.get_hotkey_display())
