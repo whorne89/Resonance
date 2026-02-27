@@ -4,7 +4,7 @@ Allows configuration of hotkey, model, audio device, etc.
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
     QButtonGroup, QCheckBox
@@ -444,6 +444,27 @@ class SettingsDialog(QDialog):
         else:
             self.postproc_status_label.setText("Model not downloaded")
             self.postproc_status_label.setStyleSheet("color: orange; font-size: 10px;")
+
+    def _download_postproc_model(self):
+        """Download the post-processing model."""
+        from core.post_processor import PostProcessor
+
+        self.postproc_download_button.setEnabled(False)
+        self.postproc_status_label.setText("Downloading...")
+        self.postproc_status_label.setStyleSheet("color: blue; font-size: 10px;")
+        QApplication.processEvents()
+
+        try:
+            backend = self.config.get_post_processing_backend()
+            pp = PostProcessor(backend=backend)
+            pp.download_model()
+            self.postproc_status_label.setText("Model ready")
+            self.postproc_status_label.setStyleSheet("color: green; font-size: 10px;")
+            self.postproc_download_button.setText("Downloaded")
+        except Exception as e:
+            self.postproc_status_label.setText(f"Download failed: {e}")
+            self.postproc_status_label.setStyleSheet("color: red; font-size: 10px;")
+            self.postproc_download_button.setEnabled(True)
 
     def open_dictionary(self):
         """Open the custom dictionary editor."""
