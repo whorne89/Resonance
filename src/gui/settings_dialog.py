@@ -222,10 +222,6 @@ class SettingsDialog(QDialog):
         typing_group = self.create_typing_group()
         layout.addWidget(typing_group)
 
-        # Processing device settings
-        device_group = self.create_device_group()
-        layout.addWidget(device_group)
-
         # Dictionary settings
         dictionary_group = self.create_dictionary_group()
         layout.addWidget(dictionary_group)
@@ -504,13 +500,6 @@ class SettingsDialog(QDialog):
                     self.device_combo.setCurrentIndex(i)
                     break
 
-        # Processing device
-        device = self.config.get_device()
-        if device == "cuda":
-            self.device_gpu_radio.setChecked(True)
-        else:
-            self.device_cpu_radio.setChecked(True)
-
         # Typing method
         use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
         if use_clipboard:
@@ -566,14 +555,10 @@ class SettingsDialog(QDialog):
             # Get typing method
             use_clipboard = self.typing_paste_radio.isChecked()
 
-            # Get processing device
-            processing_device = "cuda" if self.device_gpu_radio.isChecked() else "cpu"
-
             # Save to config
             self.config.set_hotkey(hotkey)
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
-            self.config.set_device(processing_device)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
             self.config.save()
 
