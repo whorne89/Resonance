@@ -66,6 +66,7 @@ Right-click the system tray icon and select **Settings** to configure:
 - **Entry Method**: Choose between clipboard paste or character-by-character typing
 - **Custom Dictionary**: Add word replacements applied after transcription
 - **Usage Statistics**: Track words dictated, transcriptions, time saved, and more
+- **Bug Report**: Submit a pre-filled GitHub issue with system info and recent logs directly from Settings
 
 ## Technical Details
 
@@ -128,6 +129,9 @@ The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink is
 MIT License
 
 ## Changelog
+
+### v2.2.1
+- **Bug report button**: Settings dialog includes a "Report Bug..." button that opens a pre-filled GitHub issue with system info and recent logs
 
 ### v2.2.0
 - **Scrollable settings dialog**: Settings now scroll vertically on small screens with fixed Save/Cancel buttons at bottom

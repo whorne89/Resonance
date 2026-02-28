@@ -47,7 +47,7 @@ src/
 - **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
-- **Single source of truth**: `version` field in `pyproject.toml` (currently 2.1.0)
+- **Single source of truth**: `version` field in `pyproject.toml` (currently 2.2.1)
 - About dialog reads via `importlib.metadata.version('resonance')` — never hardcode version strings
 - Package must be installed in editable mode (`uv pip install -e .`) for importlib.metadata to work
 
