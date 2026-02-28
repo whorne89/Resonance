@@ -105,6 +105,18 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - **AboutDialog**: RoundedDialog with 28px title, subtitle, description mentioning Whisper + Qwen, author, version from importlib.metadata
 - **Startup toast**: Shows hotkey, model name, post-processing status, and entry method (details in bold)
 
+## Future: macOS Support
+- **Goal**: Single Python codebase that runs on both Windows and Mac
+- **Platform-specific code is ~5%** — most of the app (Qt GUI, faster-whisper, sounddevice, config, post-processing) is already cross-platform
+- **What needs abstraction**:
+  - `winsound` → cross-platform alternative (e.g. `simpleaudio` or `playsound`) on Mac
+  - `ctypes.windll` (app ID) → already in try/except, just skip on Mac
+  - `pynput` hotkeys/typing → works on Mac but requires Accessibility permissions; need a first-run permission prompt
+  - Sound effects playback call — WAV files work everywhere, just the playback API differs
+- **Recommended approach**: Create a `platform/` module with `windows.py` and `macos.py` behind a common interface (`play_sound()`, `set_app_id()`, permission checks). Keep one codebase, two build configs (PyInstaller for Windows, py2app for Mac)
+- **Hardest part**: macOS Accessibility permission UX — users must manually grant permission in System Settings for hotkeys and simulated typing to work. Testing will also be painful (need a Mac environment)
+- **Not prioritized yet** — notes for future planning
+
 ## Abandoned Work
 - **LLM formatting commands** — tried Qwen2.5 0.5B-7B for voice formatting commands (bullets, numbered lists, scratch that). Generic models can't reliably interpret these. Grammar/punctuation cleanup was re-added without formatting commands.
 - **pywhispercpp (whisper.cpp)** — tried for Vulkan GPU support, reverted because CPU performance was ~2x slower than faster-whisper.
