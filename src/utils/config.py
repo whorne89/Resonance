@@ -55,7 +55,7 @@ class ConfigManager:
             "enabled": True
         },
         "whisper": {
-            "model_size": "small",
+            "model_size": "base",
             "language": "en",
             "device": "cpu",
             "compute_type": "int8"

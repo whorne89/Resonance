@@ -247,6 +247,87 @@ class ToastNotification(QWidget):
         painter.end()
 
 
+class DownloadToast(ToastNotification):
+    """
+    Toast notification with an animated marquee progress bar at the bottom.
+
+    Used during model downloads to show indeterminate progress.
+    """
+
+    MARQUEE_HEIGHT = 3
+    MARQUEE_WIDTH_RATIO = 0.30  # Highlight is 30% of toast width
+    MARQUEE_CYCLE_MS = 1500     # Full cycle in milliseconds
+    TICK_MS = 30                # Animation frame interval
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._downloading = False
+        self._marquee_pos = 0.0  # 0.0 to 1.0
+
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(self.TICK_MS)
+        self._anim_timer.timeout.connect(self._tick_marquee)
+
+    def show_download(self, message):
+        """Show the toast with a marquee progress bar. Does NOT auto-dismiss."""
+        self._downloading = True
+        self._marquee_pos = 0.0
+        self.show_toast(message)
+        self._anim_timer.start()
+
+    def _start_hold(self):
+        """Override: skip auto-dismiss timer while downloading."""
+        if not self._downloading:
+            super()._start_hold()
+
+    def _tick_marquee(self):
+        """Advance marquee position and repaint."""
+        step = self.TICK_MS / self.MARQUEE_CYCLE_MS
+        self._marquee_pos = (self._marquee_pos + step) % 1.0
+        self.update()
+
+    def set_complete(self, message):
+        """Stop animation, update text, and auto-dismiss after 2 seconds."""
+        self._downloading = False
+        self._anim_timer.stop()
+        self._message = message
+        self.update()
+        self._hold_timer.start(2000)
+
+    def paintEvent(self, event):
+        """Draw the toast then overlay a marquee bar at the bottom."""
+        super().paintEvent(event)
+
+        if not self._downloading:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Clip to the rounded toast shape so the bar doesn't leak outside
+        clip = QPainterPath()
+        clip.addRoundedRect(
+            0.5, 0.5,
+            self.WIDTH - 1, self._height - 1,
+            self.RADIUS, self.RADIUS,
+        )
+        painter.setClipPath(clip)
+
+        # Marquee bar at the very bottom
+        bar_y = self._height - self.MARQUEE_HEIGHT
+        highlight_w = int(self.WIDTH * self.MARQUEE_WIDTH_RATIO)
+
+        # Position slides from -highlight_w to WIDTH
+        total_travel = self.WIDTH + highlight_w
+        x = int(self._marquee_pos * total_travel) - highlight_w
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self.ACCENT_COLOR))
+        painter.drawRect(x, bar_y, highlight_w, self.MARQUEE_HEIGHT)
+
+        painter.end()
+
+
 class ClipboardToast(QWidget):
     """
     Small floating 'Copied to clipboard' indicator.

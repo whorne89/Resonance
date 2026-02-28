@@ -30,7 +30,7 @@ from gui.recording_overlay import RecordingOverlay
 from gui.system_tray import SystemTrayIcon
 from gui.settings_dialog import SettingsDialog
 from gui.theme import apply_theme
-from gui.toast_notification import ClipboardToast
+from gui.toast_notification import ClipboardToast, DownloadToast
 from utils.config import ConfigManager
 from utils.logger import setup_logger
 
@@ -68,6 +68,24 @@ class TranscriptionWorker(QObject):
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Transcription failed: {e}")
+            self.error.emit(str(e))
+
+
+class ModelLoadWorker(QObject):
+    """Worker for loading/downloading a Whisper model in the background."""
+
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, transcriber):
+        super().__init__()
+        self.transcriber = transcriber
+
+    def run(self):
+        try:
+            self.transcriber.load_model()
+            self.finished.emit()
+        except Exception as e:
             self.error.emit(str(e))
 
 
@@ -313,13 +331,15 @@ class VTTApplication(QObject):
                         self.tray_icon.show_error(f"Failed to paste text: {e}")
             else:
                 self.logger.warning("Transcription returned empty text")
+                if self.overlay:
+                    self.overlay.show_no_speech()
 
             # Reset UI
             if self.tray_icon:
                 self.tray_icon.set_idle_state()
             if self.overlay:
-                # Brief hold on green state before fading out
-                self.overlay.hide_overlay(delay_ms=600 if text else 0)
+                # Brief hold before fading out
+                self.overlay.hide_overlay(delay_ms=600)
         finally:
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")
@@ -508,21 +528,58 @@ def main():
     tray_icon.settings_requested.connect(vtt_app.show_settings)
     tray_icon.quit_requested.connect(vtt_app.quit)
 
-    # Build startup message with details
+    # Check if model needs downloading
     model_names = {"tiny": "Fastest", "base": "Balanced", "small": "Accurate", "medium": "Precision"}
     model_id = vtt_app.config.get_model_size()
     model_label = model_names.get(model_id, model_id)
-    pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-    use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
-    entry_method = "Clipboard" if use_clipboard else "Character-by-character"
 
-    startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
-    startup_details = (
-        f"Model: {model_label}\n"
-        f"Post-processing: {pp_status}\n"
-        f"Entry: {entry_method}"
-    )
-    tray_icon.show_message("Service Started", startup_msg, details=startup_details)
+    if not vtt_app.transcriber.is_model_downloaded(model_id):
+        # Unregister hotkey until model is ready
+        vtt_app.hotkey_manager.unregister_hotkey()
+
+        # Show download toast with marquee progress
+        download_toast = DownloadToast()
+        download_toast.show_download(f"Installing {model_label} model, please wait...")
+
+        # Load model in background thread
+        load_thread = QThread()
+        load_worker = ModelLoadWorker(vtt_app.transcriber)
+        load_worker.moveToThread(load_thread)
+        load_thread.started.connect(load_worker.run)
+
+        def on_model_loaded():
+            download_toast.set_complete("Complete \u2014 ready to use")
+            vtt_app.setup_hotkey()
+            load_thread.quit()
+            load_thread.wait(2000)
+
+        def on_model_error(msg):
+            download_toast.set_complete(f"Download failed: {msg}")
+            load_thread.quit()
+            load_thread.wait(2000)
+
+        load_worker.finished.connect(on_model_loaded)
+        load_worker.error.connect(on_model_error)
+
+        # Keep references alive (prevent GC)
+        vtt_app._load_thread = load_thread
+        vtt_app._load_worker = load_worker
+        vtt_app._download_toast = download_toast
+
+        load_thread.start()
+    else:
+        # Normal startup — show info toast
+        pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+        use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
+        entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+
+        startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
+        startup_details = (
+            f"Model: {model_label}\n"
+            f"Post-processing: {pp_status}\n"
+            f"Entry: {entry_method}"
+        )
+        tray_icon.show_message("Service Started", startup_msg, details=startup_details)
 
     # Run application
     sys.exit(app.exec())

@@ -219,20 +219,24 @@ QSplitter::handle {{
 
 /* ── Scroll bars ──────────────────────────────────── */
 QScrollBar:vertical {{
-    background-color: {BG_PRIMARY};
-    width: 10px;
+    background: transparent;
+    width: 6px;
+    margin: 4px 1px;
     border: none;
 }}
 QScrollBar::handle:vertical {{
-    background-color: {BORDER};
-    border-radius: 4px;
-    min-height: 20px;
+    background-color: rgba(255, 255, 255, 40);
+    border-radius: 3px;
+    min-height: 30px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background-color: {ACCENT_HOVER};
+    background-color: rgba(255, 255, 255, 70);
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0px;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
 }}
 QScrollBar:horizontal {{
     background-color: {BG_PRIMARY};
@@ -249,6 +253,12 @@ QScrollBar::handle:horizontal:hover {{
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0px;
+}}
+
+/* ── Scroll areas ────────────────────────────────── */
+QScrollArea {{
+    background: transparent;
+    border: none;
 }}
 
 /* ── Tooltips ─────────────────────────────────────── */

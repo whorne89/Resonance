@@ -35,6 +35,7 @@ class RecordingOverlay(QWidget):
     REC_COLOR = QColor(231, 76, 60)           # #e74c3c red
     PROC_COLOR = QColor(52, 152, 219)         # #3498db blue
     TYPE_COLOR = QColor(46, 204, 113)         # #2ecc71 green
+    ERROR_COLOR = QColor(231, 76, 60)         # #e74c3c red
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,6 +52,7 @@ class RecordingOverlay(QWidget):
         self._typing_dot_count = 0  # 0-3 for animated "..."
         self._typing_text = "Typing"
         self._typing_show_dots = True
+        self._typing_color = self.TYPE_COLOR
 
         # Audio source (set by caller)
         self._audio_recorder = None
@@ -138,6 +140,7 @@ class RecordingOverlay(QWidget):
         self._state = "typing"
         self._typing_text = "Typing"
         self._typing_show_dots = True
+        self._typing_color = self.TYPE_COLOR
         self._typing_tick = 0
         self.update()
 
@@ -146,12 +149,22 @@ class RecordingOverlay(QWidget):
         self._state = "typing"
         self._typing_text = "Text Entered"
         self._typing_show_dots = False
+        self._typing_color = self.TYPE_COLOR
         self.update()
 
     def show_complete(self):
         """Show 'Complete' after typing finishes."""
         self._typing_text = "Complete"
         self._typing_show_dots = False
+        self._typing_color = self.TYPE_COLOR
+        self.update()
+
+    def show_no_speech(self):
+        """Show 'No speech detected' in red."""
+        self._state = "typing"
+        self._typing_text = "No speech detected"
+        self._typing_show_dots = False
+        self._typing_color = self.ERROR_COLOR
         self.update()
 
     def hide_overlay(self, delay_ms=0):
@@ -342,11 +355,11 @@ class RecordingOverlay(QWidget):
             painter.drawEllipse(x - radius, center_y - radius, radius * 2, radius * 2)
 
     def _paint_typing(self, painter):
-        """Draw typing/pasted/complete indicator in green."""
+        """Draw typing/pasted/complete/error indicator."""
         font = QFont()
         font.setPixelSize(13)
         painter.setFont(font)
-        painter.setPen(self.TYPE_COLOR)
+        painter.setPen(self._typing_color)
 
         text = self._typing_text
         if self._typing_show_dots:

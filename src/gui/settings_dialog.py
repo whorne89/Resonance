@@ -10,14 +10,22 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
-    QButtonGroup, QGridLayout, QFrame, QCheckBox
+    QButtonGroup, QGridLayout, QFrame, QCheckBox,
+    QScrollArea, QWidget
 )
 from PySide6.QtCore import Signal, QTimer, Qt, QThread, QObject
-from PySide6.QtGui import QPalette, QColor, QKeyEvent
+from PySide6.QtGui import QPalette, QColor, QKeyEvent, QGuiApplication
 
 from gui.dictionary_dialog import DictionaryDialog
 from gui.theme import RoundedDialog, MessageBox
 from utils.config import format_hotkey_display
+
+
+class _NoWheelComboBox(QComboBox):
+    """QComboBox that ignores mouse wheel events so scrolling passes through."""
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class HotkeyCaptureDialog(RoundedDialog):
@@ -466,40 +474,57 @@ class SettingsDialog(RoundedDialog):
         self.transcriber = transcriber
 
         self.setWindowTitle("Resonance Settings")
-        self.setMinimumWidth(500)
+        self.setFixedWidth(800)
 
         self.init_ui()
         self.load_current_settings()
 
     def init_ui(self):
         """Initialize user interface."""
-        layout = QVBoxLayout()
+        outer_layout = QVBoxLayout()
+
+        # Scroll area wrapping all group boxes (vertical only)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll_area.viewport().setStyleSheet("background: transparent;")
+
+        content_widget = QWidget()
+        content_widget.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(2, 0, 8, 0)
 
         # Usage statistics (dashboard cards at top)
         statistics_group = self.create_statistics_group()
-        layout.addWidget(statistics_group)
+        content_layout.addWidget(statistics_group)
 
         # Hotkey settings
         hotkey_group = self.create_hotkey_group()
-        layout.addWidget(hotkey_group)
+        content_layout.addWidget(hotkey_group)
 
         # Whisper model settings
         model_group = self.create_model_group()
-        layout.addWidget(model_group)
+        content_layout.addWidget(model_group)
 
         # Audio settings
         audio_group = self.create_audio_group()
-        layout.addWidget(audio_group)
+        content_layout.addWidget(audio_group)
 
         # Typing settings
         typing_group = self.create_typing_group()
-        layout.addWidget(typing_group)
+        content_layout.addWidget(typing_group)
 
         # Dictionary settings
         dictionary_group = self.create_dictionary_group()
-        layout.addWidget(dictionary_group)
+        content_layout.addWidget(dictionary_group)
 
-        # Buttons
+        content_widget.setLayout(content_layout)
+        scroll_area.setWidget(content_widget)
+        outer_layout.addWidget(scroll_area, 1)
+
+        # Buttons (fixed at bottom, outside scroll area)
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
@@ -511,9 +536,22 @@ class SettingsDialog(RoundedDialog):
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
 
-        layout.addLayout(button_layout)
+        outer_layout.addLayout(button_layout)
 
-        self.setLayout(layout)
+        self.setLayout(outer_layout)
+
+    def showEvent(self, event):
+        """Size dialog to fit content width and constrain height to screen."""
+        screen = self.screen()
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            hint = self.sizeHint()
+            new_width = min(hint.width(), geo.width() - 40)
+            new_height = min(hint.height(), geo.height() - 40)
+            self.resize(new_width, new_height)
+        super().showEvent(event)
 
     def create_hotkey_group(self):
         """Create hotkey configuration group."""
@@ -562,7 +600,7 @@ class SettingsDialog(RoundedDialog):
         layout.setVerticalSpacing(4)
 
         # Model size dropdown
-        self.model_combo = QComboBox()
+        self.model_combo = _NoWheelComboBox()
         models = [
             ("Fastest",   "tiny"),
             ("Balanced",  "base"),
@@ -614,7 +652,7 @@ class SettingsDialog(RoundedDialog):
         layout = QFormLayout()
 
         # Audio device dropdown
-        self.device_combo = QComboBox()
+        self.device_combo = _NoWheelComboBox()
         self.populate_audio_devices()
         layout.addRow("Microphone:", self.device_combo)
 
