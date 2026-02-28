@@ -5,6 +5,7 @@ Main entry point that orchestrates all components.
 
 import sys
 import ctypes
+from datetime import date
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QThread, Qt
 
@@ -27,6 +28,8 @@ from core.sound_effects import SoundEffects
 from gui.recording_overlay import RecordingOverlay
 from gui.system_tray import SystemTrayIcon
 from gui.settings_dialog import SettingsDialog
+from gui.theme import apply_theme
+from gui.toast_notification import ClipboardToast
 from utils.config import ConfigManager
 from utils.logger import setup_logger
 
@@ -98,10 +101,12 @@ class VTTApplication(QObject):
         self.tray_icon = None
         self.settings_dialog = None
         self.overlay = None  # Created in main() after QApplication exists
+        self.clipboard_toast = None  # Created in main() after QApplication exists
 
         # Threading
         self.transcription_thread = None
         self.transcription_worker = None
+        self._last_audio_samples = 0  # Track sample count for stats
 
         # Connect hotkey signals to handlers (thread-safe marshaling)
         self._hotkey_pressed.connect(self.on_hotkey_press)
@@ -168,6 +173,7 @@ class VTTApplication(QObject):
                 return
 
             self.logger.info(f"Audio recorded: {len(audio_data)} samples")
+            self._last_audio_samples = len(audio_data)
 
             # Update UI to transcribing state
             if self.tray_icon:
@@ -262,6 +268,10 @@ class VTTApplication(QObject):
                 if text != original:
                     self.logger.info(f"Dictionary applied: '{original}' -> '{text}'")
 
+            # Update usage statistics
+            if text:
+                self._update_statistics(text)
+
             # Type the text
             if text:
                 try:
@@ -270,10 +280,10 @@ class VTTApplication(QObject):
                     success = self.keyboard_typer.type_text(text)
                     if success:
                         self.logger.info("Text output successful")
+                        if self.keyboard_typer.use_clipboard and self.clipboard_toast:
+                            self.clipboard_toast.show_toast()
                     else:
                         self.logger.warning("Text output failed")
-
-                    # Note: Transcription complete notifications are disabled
                 except Exception as e:
                     self.logger.error(f"Error outputting text: {e}")
                     if self.tray_icon:
@@ -289,6 +299,32 @@ class VTTApplication(QObject):
         finally:
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")
+
+    def _update_statistics(self, text):
+        """Update usage statistics after a successful transcription."""
+        try:
+            word_count = len(text.split())
+            char_count = len(text)
+
+            self.config.increment_stat("total_words", word_count)
+            self.config.increment_stat("total_transcriptions", 1)
+            self.config.increment_stat("total_characters", char_count)
+
+            # Set first_used if not already set
+            stats = self.config.get_statistics()
+            if not stats.get("first_used"):
+                stats["first_used"] = date.today().isoformat()
+                self.config.set("statistics", value=stats)
+
+            # Recording duration from audio samples
+            sample_rate = self.config.get("audio", "sample_rate", default=16000)
+            if self._last_audio_samples > 0:
+                duration = self._last_audio_samples / sample_rate
+                self.config.increment_stat("total_recording_seconds", round(duration, 1))
+
+            self.config.save()
+        except Exception as e:
+            self.logger.error(f"Failed to update statistics: {e}")
 
     def on_transcription_error(self, error_msg):
         """
@@ -341,9 +377,6 @@ class VTTApplication(QObject):
             )
             dialog.settings_changed.connect(self.on_settings_changed)
 
-            # Set window flags to ensure it appears on top
-            dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
-
             self.logger.info("Showing settings dialog as modal")
             # Use exec() to show as modal dialog - this FORCES it to appear
             dialog.exec()
@@ -365,10 +398,14 @@ class VTTApplication(QObject):
         device_idx = self.config.get_audio_device()
         self.audio_recorder.set_device(device_idx)
 
-        # Update model (will reload on next transcription)
+        # Update model — defer loading to next transcription to avoid
+        # blocking the UI thread on large models.
         model_size = self.config.get_model_size()
         if model_size != self.transcriber.model_size:
-            self.transcriber.change_model(model_size)
+            self.logger.info(f"Model changed to '{model_size}', will load on next transcription")
+            with self.transcriber._lock:
+                self.transcriber.model_size = model_size
+                self.transcriber.model = None  # Force reload on next use
 
         # Update typing speed and method
         self.keyboard_typer.set_typing_speed(self.config.get_typing_speed())
@@ -400,6 +437,9 @@ def main():
     app.setApplicationDisplayName("Resonance")
     app.setQuitOnLastWindowClosed(False)  # Keep running with system tray
 
+    # Apply dark theme
+    apply_theme(app)
+
     # Create application controller
     vtt_app = VTTApplication()
 
@@ -407,6 +447,9 @@ def main():
     overlay = RecordingOverlay()
     overlay.set_audio_recorder(vtt_app.audio_recorder)
     vtt_app.overlay = overlay
+
+    # Create clipboard toast indicator
+    vtt_app.clipboard_toast = ClipboardToast()
 
     # Create and setup system tray with formatted hotkey
     tray_icon = SystemTrayIcon(hotkey_display=vtt_app.config.get_hotkey_display())
@@ -418,7 +461,7 @@ def main():
 
     # Show ready message
     tray_icon.show_message(
-        "Resonance Service Started",
+        "Service Started",
         f"To start dictation, press {vtt_app.config.get_hotkey_display()}"
     )
 

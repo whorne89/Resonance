@@ -20,6 +20,7 @@ from utils.resource_path import get_app_data_path
 class SoundEffects:
     """Generates and plays short notification tones."""
 
+
     def __init__(self, sample_rate=44100, volume=0.3):
         self.sample_rate = sample_rate
         self.volume = volume
@@ -30,7 +31,6 @@ class SoundEffects:
 
         self._start_path = os.path.join(sounds_dir, 'start.wav')
         self._stop_path = os.path.join(sounds_dir, 'stop.wav')
-
         # Only generate defaults if user hasn't provided custom WAV files
         if not os.path.exists(self._start_path):
             self._write_wav(self._start_path, self._generate_piano_tone(freq=523))

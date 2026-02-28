@@ -78,6 +78,13 @@ class ConfigManager:
             "replacements": {},
             "fuzzy_enabled": True,
             "fuzzy_threshold": 0.75
+        },
+        "statistics": {
+            "total_words": 0,
+            "total_transcriptions": 0,
+            "total_characters": 0,
+            "first_used": None,
+            "total_recording_seconds": 0.0
         }
     }
 
@@ -281,6 +288,21 @@ class ConfigManager:
     def set_dictionary_fuzzy_threshold(self, threshold):
         """Set fuzzy matching threshold."""
         self.set("dictionary", "fuzzy_threshold", value=threshold)
+
+    def get_statistics(self):
+        """Get the statistics dict."""
+        return self.get("statistics", default={})
+
+    def increment_stat(self, key, amount=1):
+        """Increment a statistic value and save."""
+        stats = self.get_statistics()
+        stats[key] = stats.get(key, 0) + amount
+        self.set("statistics", value=stats)
+
+    def reset_statistics(self):
+        """Reset all statistics to defaults."""
+        self.set("statistics", value=self.DEFAULT_CONFIG["statistics"].copy())
+        self.save()
 
     def reset_to_defaults(self):
         """Reset configuration to defaults."""

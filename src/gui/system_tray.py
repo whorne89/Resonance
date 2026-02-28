@@ -3,12 +3,14 @@ System tray interface for Resonance.
 Provides minimal UI with icon and context menu.
 """
 
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QMessageBox
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PySide6.QtGui import QIcon, QAction
-from PySide6.QtCore import Signal, QObject
+from PySide6.QtCore import Signal, QObject, Qt
 from pathlib import Path
 
 from utils.resource_path import get_resource_path
+from gui.toast_notification import ToastNotification
+from gui.theme import RoundedDialog
 
 
 class SystemTrayIcon(QSystemTrayIcon):
@@ -40,6 +42,9 @@ class SystemTrayIcon(QSystemTrayIcon):
 
         # Create context menu
         self.create_menu()
+
+        # Toast notification overlay
+        self._toast = ToastNotification()
 
         # Connect signals
         self.activated.connect(self.on_tray_activated)
@@ -154,43 +159,29 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.setIcon(self.icon_recording)
         self.setToolTip("Resonance - Transcribing...")
 
+    def showMessage(self, *args, **kwargs):
+        """Override Qt native notification — redirect to custom toast.
+
+        Prevents Windows from showing its own balloon/toast notification.
+        Accepts both the Qt signature and our custom keyword args.
+        """
+        # Extract message: positional (title, message, ...) or keyword
+        if len(args) >= 2:
+            self._toast.show_toast(args[1])
+        elif len(args) >= 1:
+            self._toast.show_toast(args[0])
+
     def show_message(self, title, message, icon_type=QSystemTrayIcon.MessageIcon.Information, duration=3000):
         """
-        Show a system tray notification.
+        Show a toast notification overlay.
 
         Args:
-            title: Notification title
+            title: Notification title (unused — toast always shows "Resonance")
             message: Notification message
-            icon_type: Icon type (Information, Warning, Critical)
-            duration: Duration in milliseconds
+            icon_type: Icon type (unused — kept for API compatibility)
+            duration: Duration in milliseconds (unused — toast auto-dismisses)
         """
-        self.showMessage(title, message, icon_type, duration)
-
-    def show_about(self):
-        """Show about dialog window."""
-        from importlib.metadata import version as pkg_version, PackageNotFoundError
-        try:
-            app_version = pkg_version("resonance")
-        except PackageNotFoundError:
-            app_version = "dev"
-
-        about_text = (
-            "Resonance - Voice to Text Application\n\n"
-            "Resonance is a voice-to-text application that is toggled\n"
-            "by using a configurable hotkey. Hold the hotkey while\n"
-            "speaking, then release to transcribe your speech into text.\n\n"
-            "Uses local Whisper AI - no internet required,\n"
-            "completely private and secure.\n\n"
-            "Created by William Horne\n\n"
-            f"Version {app_version}"
-        )
-
-        msg_box = QMessageBox()
-        msg_box.setWindowTitle("About Resonance")
-        msg_box.setText(about_text)
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.exec()
+        self._toast.show_toast(message)
 
     def show_transcription_complete(self, text):
         """
@@ -210,14 +201,70 @@ class SystemTrayIcon(QSystemTrayIcon):
 
     def show_error(self, error_message):
         """
-        Show error notification.
+        Show error notification via toast overlay.
 
         Args:
             error_message: Error message to display
         """
-        self.show_message(
-            "Error",
-            error_message,
-            QSystemTrayIcon.MessageIcon.Critical,
-            5000
+        self._toast.show_toast(error_message)
+
+    def show_about(self):
+        """Show about dialog window."""
+        dialog = AboutDialog()
+        dialog.exec()
+
+
+class AboutDialog(RoundedDialog):
+    """Custom rounded About dialog for Resonance."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About Resonance")
+        self.setFixedWidth(380)
+
+        from importlib.metadata import version as pkg_version, PackageNotFoundError
+        try:
+            app_version = pkg_version("resonance")
+        except PackageNotFoundError:
+            app_version = "dev"
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+
+        title = QLabel("Resonance")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "Voice-to-text powered by local Whisper AI.\n\n"
+            "Hold your hotkey while speaking, then release\n"
+            "to transcribe. No internet required \u2014\n"
+            "completely private and secure."
         )
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setStyleSheet("color: rgba(255, 255, 255, 180);")
+        layout.addWidget(desc)
+
+        author = QLabel("Created by William Horne")
+        author.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        author.setStyleSheet("color: rgba(255, 255, 255, 140);")
+        layout.addWidget(author)
+
+        version = QLabel(f"Version {app_version}")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version.setStyleSheet("color: rgba(255, 255, 255, 140);")
+        layout.addWidget(version)
+
+        layout.addSpacing(4)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        ok_btn = QPushButton("OK")
+        ok_btn.setFixedWidth(80)
+        ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)

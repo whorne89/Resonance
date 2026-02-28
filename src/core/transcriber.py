@@ -145,16 +145,37 @@ class Transcriber:
                 HuggingFace repo ID ("Systran/faster-distil-whisper-large-v3").
 
         Returns:
-            bool: True if model is downloaded, False otherwise
+            bool: True if model is fully downloaded, False otherwise
         """
         if '/' in model_size:
             cache_name = "models--" + model_size.replace('/', '--')
         else:
             cache_name = f"models--Systran--faster-whisper-{model_size}"
         model_path = os.path.join(self.models_dir, cache_name)
-        exists = os.path.exists(model_path) and os.path.isdir(model_path)
-        self.logger.info(f"Checking model {model_size}: path={model_path}, exists={exists}")
-        return exists
+
+        if not os.path.isdir(model_path):
+            self.logger.info(f"Checking model {model_size}: path={model_path}, not found")
+            return False
+
+        # Check for .incomplete files in blobs — indicates a partial download
+        blobs_dir = os.path.join(model_path, "blobs")
+        if os.path.isdir(blobs_dir):
+            for fname in os.listdir(blobs_dir):
+                if fname.endswith(".incomplete"):
+                    self.logger.info(f"Checking model {model_size}: incomplete download detected")
+                    return False
+
+        # Check that at least one snapshot has a model.bin file
+        snapshots_dir = os.path.join(model_path, "snapshots")
+        if os.path.isdir(snapshots_dir):
+            for snap in os.listdir(snapshots_dir):
+                model_bin = os.path.join(snapshots_dir, snap, "model.bin")
+                if os.path.isfile(model_bin):
+                    self.logger.info(f"Checking model {model_size}: fully downloaded")
+                    return True
+
+        self.logger.info(f"Checking model {model_size}: directory exists but model files missing")
+        return False
 
     @staticmethod
     def get_model_size_info(model_size):
@@ -171,7 +192,7 @@ class Transcriber:
             "tiny": {"size_mb": 70, "description": "Fastest, lower accuracy"},
             "base": {"size_mb": 140, "description": "Fast, decent accuracy"},
             "small": {"size_mb": 500, "description": "Balanced"},
-            "Systran/faster-distil-whisper-small.en": {"size_mb": 250, "description": "Fast, English only"},
+            "medium": {"size_mb": 1500, "description": "High accuracy, slower"},
             "Systran/faster-distil-whisper-large-v3": {"size_mb": 800, "description": "High accuracy, ~6x faster than large"},
         }
         return model_info.get(model_size, {"size_mb": 0, "description": "Unknown"})

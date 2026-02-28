@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt, QThread, QTimer, QObject
 
+from gui.theme import RoundedDialog, MessageBox
+
 
 class LearnWorker(QObject):
     """Worker that transcribes a short audio clip in a background thread."""
@@ -33,7 +35,7 @@ class LearnWorker(QObject):
             self.error.emit(str(e))
 
 
-class DictionaryDialog(QDialog):
+class DictionaryDialog(RoundedDialog):
     """Dialog for managing custom word replacements (many-to-one)."""
 
     dictionary_changed = Signal()
@@ -52,7 +54,7 @@ class DictionaryDialog(QDialog):
 
         self.setWindowTitle("Custom Dictionary")
         self.setMinimumWidth(650)
-        self.setMinimumHeight(520)
+        self.setMinimumHeight(570)
 
         self.init_ui()
         self.load_dictionary()
@@ -67,7 +69,7 @@ class DictionaryDialog(QDialog):
             "the word — Whisper will show what it hears, and that gets auto-added\n"
             "as a variation. Repeat a few times to catch different interpretations."
         )
-        desc.setStyleSheet("color: gray; font-size: 11px; margin-bottom: 8px;")
+        desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px; margin-bottom: 8px;")
         layout.addWidget(desc)
 
         # Enable/disable checkbox
@@ -108,7 +110,7 @@ class DictionaryDialog(QDialog):
         # --- Left panel: Correct words ---
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setContentsMargins(0, 0, 8, 0)
 
         left_label = QLabel("Correct Words")
         left_label.setStyleSheet("font-weight: bold; font-size: 12px;")
@@ -155,7 +157,7 @@ class DictionaryDialog(QDialog):
         learn_layout = QVBoxLayout()
 
         learn_desc = QLabel("Say the word into your mic — Whisper will show what it hears.")
-        learn_desc.setStyleSheet("color: gray; font-size: 10px;")
+        learn_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
         learn_layout.addWidget(learn_desc)
 
         record_row = QHBoxLayout()
@@ -192,7 +194,7 @@ class DictionaryDialog(QDialog):
         right_layout.addWidget(self.remove_variation_button)
 
         splitter.addWidget(right_widget)
-        splitter.setSizes([230, 420])
+        splitter.setSizes([190, 460])
 
         layout.addWidget(splitter)
 
@@ -278,7 +280,7 @@ class DictionaryDialog(QDialog):
 
         for i in range(self.word_list.count()):
             if self.word_list.item(i).text().lower() == word.lower():
-                QMessageBox.warning(
+                MessageBox.warning(
                     self, "Duplicate",
                     f"\"{word}\" is already in the dictionary."
                 )
@@ -293,16 +295,15 @@ class DictionaryDialog(QDialog):
         """Remove the selected correct word and all its variations."""
         current = self.word_list.currentItem()
         if not current:
-            QMessageBox.warning(self, "No Selection", "Select a word to remove.")
+            MessageBox.warning(self, "No Selection", "Select a word to remove.")
             return
 
         word = current.text()
-        reply = QMessageBox.question(
+        reply = MessageBox.question(
             self, "Remove Word",
             f"Remove \"{word}\" and all its variations?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == MessageBox.Yes:
             del self._data[word]
             self.word_list.takeItem(self.word_list.row(current))
 
@@ -347,7 +348,7 @@ class DictionaryDialog(QDialog):
         correct_word = current_word_item.text()
 
         if variation.lower() == correct_word.lower():
-            QMessageBox.warning(
+            MessageBox.warning(
                 self, "Same Word",
                 "The variation can't be the same as the correct word."
             )
@@ -355,7 +356,7 @@ class DictionaryDialog(QDialog):
 
         variations = self._data.get(correct_word, [])
         if any(v.lower() == variation.lower() for v in variations):
-            QMessageBox.warning(
+            MessageBox.warning(
                 self, "Duplicate",
                 f"\"{variation}\" is already listed as a variation."
             )
@@ -365,7 +366,7 @@ class DictionaryDialog(QDialog):
             if other_word == correct_word:
                 continue
             if any(v.lower() == variation.lower() for v in other_vars):
-                QMessageBox.warning(
+                MessageBox.warning(
                     self, "Conflict",
                     f"\"{variation}\" is already a variation of \"{other_word}\"."
                 )
@@ -381,7 +382,7 @@ class DictionaryDialog(QDialog):
         current_word_item = self.word_list.currentItem()
         var_item = self.variation_list.currentItem()
         if not current_word_item or not var_item:
-            QMessageBox.warning(self, "No Selection", "Select a variation to remove.")
+            MessageBox.warning(self, "No Selection", "Select a variation to remove.")
             return
 
         correct_word = current_word_item.text()
@@ -402,7 +403,7 @@ class DictionaryDialog(QDialog):
         """Start recording a voice sample."""
         current_word_item = self.word_list.currentItem()
         if not current_word_item:
-            QMessageBox.warning(
+            MessageBox.warning(
                 self, "No Word Selected",
                 "Select or add a correct word first, then record."
             )
@@ -501,7 +502,7 @@ class DictionaryDialog(QDialog):
             self.learn_status.setStyleSheet("color: green; font-weight: bold; font-size: 11px;")
         else:
             self.learn_status.setText(f"Already known: \"{text}\"")
-            self.learn_status.setStyleSheet("color: gray; font-size: 11px;")
+            self.learn_status.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
 
     def _on_learn_error(self, error_msg):
         """Handle transcription error during voice learning."""
@@ -535,7 +536,7 @@ class DictionaryDialog(QDialog):
         self.dictionary_changed.emit()
 
         total_variations = sum(len(v) for v in replacements.values())
-        QMessageBox.information(
+        MessageBox.flash(
             self, "Dictionary Saved",
             f"Saved {len(replacements)} word(s) with {total_variations} total variation(s)."
         )
