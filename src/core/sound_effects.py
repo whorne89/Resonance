@@ -14,7 +14,7 @@ import numpy as np
 import winsound
 
 from utils.logger import get_logger
-from utils.resource_path import get_app_data_path
+from utils.resource_path import get_app_data_path, get_resource_path
 
 
 class SoundEffects:
@@ -28,14 +28,32 @@ class SoundEffects:
 
         # Sound files live in .resonance/sounds/
         sounds_dir = get_app_data_path("sounds")
+        # Bundled sounds shipped with the app (src/resources/sounds/)
+        bundled_dir = get_resource_path("sounds")
 
-        self._start_path = os.path.join(sounds_dir, 'start.wav')
-        self._stop_path = os.path.join(sounds_dir, 'stop.wav')
-        # Only generate defaults if user hasn't provided custom WAV files
-        if not os.path.exists(self._start_path):
-            self._write_wav(self._start_path, self._generate_piano_tone(freq=523))
-        if not os.path.exists(self._stop_path):
-            self._write_wav(self._stop_path, self._generate_piano_tone(freq=392))
+        self._start_path = self._resolve_sound(sounds_dir, bundled_dir, 'start.wav')
+        self._stop_path = self._resolve_sound(sounds_dir, bundled_dir, 'stop.wav')
+
+    def _resolve_sound(self, user_dir, bundled_dir, filename):
+        """Find sound file: user override > bundled > generate default.
+
+        Priority:
+        1. User-provided file in .resonance/sounds/
+        2. Bundled file in src/resources/sounds/
+        3. Auto-generated default (written to .resonance/sounds/)
+        """
+        user_path = os.path.join(user_dir, filename)
+        if os.path.exists(user_path):
+            return user_path
+
+        bundled_path = os.path.join(bundled_dir, filename)
+        if os.path.exists(bundled_path):
+            return bundled_path
+
+        # Generate default
+        freq = 523 if 'start' in filename else 392
+        self._write_wav(user_path, self._generate_piano_tone(freq=freq))
+        return user_path
 
     def _generate_piano_tone(self, freq, duration=0.6):
         """Generate a piano-like tone with room reverb.
