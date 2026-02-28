@@ -7,7 +7,7 @@ import sys
 import ctypes
 from datetime import date
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QThread, Qt
+from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
 
 
 def set_windows_app_id():
@@ -547,16 +547,30 @@ def main():
         load_worker.moveToThread(load_thread)
         load_thread.started.connect(load_worker.run)
 
+        def _show_startup_toast():
+            """Show the normal startup toast after download completes."""
+            pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+            use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
+            entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+
+            startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
+            startup_details = (
+                f"Model: {model_label}\n"
+                f"Post-processing: {pp_status}\n"
+                f"Entry: {entry_method}"
+            )
+            tray_icon.show_message("Service Started", startup_msg, details=startup_details)
+
         def on_model_loaded():
             download_toast.set_complete("Complete \u2014 ready to use")
             vtt_app.setup_hotkey()
             load_thread.quit()
-            load_thread.wait(2000)
+            # Show normal startup toast after download toast dismisses (2s)
+            QTimer.singleShot(2200, _show_startup_toast)
 
         def on_model_error(msg):
             download_toast.set_complete(f"Download failed: {msg}")
             load_thread.quit()
-            load_thread.wait(2000)
 
         load_worker.finished.connect(on_model_loaded)
         load_worker.error.connect(on_model_error)
