@@ -4,7 +4,11 @@ Allows configuration of hotkey, model, audio device, etc.
 """
 
 import os
+import platform
 import time
+import webbrowser
+from importlib.metadata import version as pkg_version, PackageNotFoundError
+from urllib.parse import quote
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -520,6 +524,10 @@ class SettingsDialog(RoundedDialog):
         dictionary_group = self.create_dictionary_group()
         content_layout.addWidget(dictionary_group)
 
+        # Bug report
+        bug_report_group = self.create_bug_report_group()
+        content_layout.addWidget(bug_report_group)
+
         content_widget.setLayout(content_layout)
         scroll_area.setWidget(content_widget)
         outer_layout.addWidget(scroll_area, 1)
@@ -726,6 +734,119 @@ class SettingsDialog(RoundedDialog):
 
         group.setLayout(layout)
         return group
+
+    def create_bug_report_group(self):
+        """Create bug report group box."""
+        group = QGroupBox("Bug Report")
+        layout = QVBoxLayout()
+
+        info_label = QLabel(
+            "Experiencing an issue? Submit a bug report with your system info and recent logs."
+        )
+        info_label.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        layout.addWidget(info_label)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        report_button = QPushButton("Report Bug...")
+        report_button.clicked.connect(self._open_bug_report)
+        button_layout.addWidget(report_button)
+
+        layout.addLayout(button_layout)
+
+        group.setLayout(layout)
+        return group
+
+    def _open_bug_report(self):
+        """Collect system info and open a pre-filled GitHub issue in the browser."""
+        # App version
+        try:
+            app_version = pkg_version("resonance")
+        except PackageNotFoundError:
+            app_version = "dev"
+
+        # Model display name
+        model_id = self.config.get_model_size()
+        model_names = {"tiny": "Fastest", "base": "Balanced", "small": "Accurate", "medium": "Precision"}
+        model_display = f"{model_names.get(model_id, model_id)} ({model_id})"
+
+        # Post-processing
+        pp_status = "On" if self.config.get_post_processing_enabled() else "Off"
+
+        # Entry method
+        use_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
+        entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+
+        # Audio device
+        device = self.config.get_audio_device()
+        audio_device = "System Default" if device is None else str(device)
+
+        # Recent logs
+        from utils.resource_path import get_app_data_path
+        log_path = os.path.join(get_app_data_path("logs"), "resonance.log")
+        log_lines = ""
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
+                log_lines = "".join(all_lines[-50:])
+        except (OSError, FileNotFoundError):
+            log_lines = "(no log file found)"
+
+        # Build body
+        body = (
+            "## Description\n"
+            "[Describe the issue here]\n\n"
+            "## Steps to Reproduce\n"
+            "1. \n2. \n3. \n\n"
+            "## Expected Behavior\n\n\n"
+            "## System Info\n"
+            f"- **App Version**: {app_version}\n"
+            f"- **OS**: {platform.platform()}\n"
+            f"- **Python**: {platform.python_version()}\n"
+            f"- **Model**: {model_display}\n"
+            f"- **Post-Processing**: {pp_status}\n"
+            f"- **Entry Method**: {entry_method}\n"
+            f"- **Audio Device**: {audio_device}\n\n"
+            "## Recent Logs\n"
+            "```\n"
+            f"{log_lines}"
+            "```\n"
+        )
+
+        # Truncate body to keep URL under ~8000 chars
+        max_body = 6000
+        if len(body) > max_body:
+            # Trim log lines to fit
+            truncation_note = "\n... (truncated)\n```\n"
+            overhead = len(body) - len(log_lines)
+            allowed_log = max_body - overhead - len(truncation_note)
+            log_lines = log_lines[:allowed_log] + truncation_note
+            body = (
+                "## Description\n"
+                "[Describe the issue here]\n\n"
+                "## Steps to Reproduce\n"
+                "1. \n2. \n3. \n\n"
+                "## Expected Behavior\n\n\n"
+                "## System Info\n"
+                f"- **App Version**: {app_version}\n"
+                f"- **OS**: {platform.platform()}\n"
+                f"- **Python**: {platform.python_version()}\n"
+                f"- **Model**: {model_display}\n"
+                f"- **Post-Processing**: {pp_status}\n"
+                f"- **Entry Method**: {entry_method}\n"
+                f"- **Audio Device**: {audio_device}\n\n"
+                "## Recent Logs\n"
+                "```\n"
+                f"{log_lines}"
+                "```\n"
+            )
+
+        title = quote("Bug: ")
+        encoded_body = quote(body)
+        url = f"https://github.com/whorne89/Resonance/issues/new?title={title}&body={encoded_body}"
+
+        webbrowser.open(url)
 
     def _create_stat_card(self, title, value):
         """Create a single stat card widget."""
