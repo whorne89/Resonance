@@ -123,7 +123,7 @@ class PostProcessor:
 
         # Short input that is entirely filler words — skip LLM to avoid hallucination
         words = raw_text.lower().split()
-        if len(words) <= 4 and all(w.strip(".,!?") in self.FILLER_WORDS for w in words):
+        if len(words) <= 6 and all(w.strip(".,!?") in self.FILLER_WORDS for w in words):
             self.logger.info(f"Post-processing: '{raw_text}' -> '' (all fillers)")
             return ""
 
