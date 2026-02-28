@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
     QMessageBox, QFormLayout, QProgressBar, QRadioButton,
-    QButtonGroup, QGridLayout, QFrame
+    QButtonGroup, QGridLayout, QFrame, QCheckBox
 )
 from PySide6.QtCore import Signal, QTimer, Qt, QThread, QObject
 from PySide6.QtGui import QPalette, QColor, QKeyEvent
@@ -320,6 +320,130 @@ class ModelDownloadDialog(RoundedDialog):
         return self._success
 
 
+class _PPDownloadWorker(QObject):
+    """Background worker for downloading post-processing model."""
+
+    finished = Signal()
+    error = Signal(str)
+    progress = Signal(int, int)  # downloaded, total
+
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        try:
+            from core.post_processor import PostProcessor
+            pp = PostProcessor()
+            pp.download_model(progress_callback=self._on_progress)
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def _on_progress(self, downloaded, total):
+        self.progress.emit(downloaded, total)
+
+
+class PostProcessingDownloadDialog(RoundedDialog):
+    """Progress dialog shown while downloading post-processing model."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Downloading Post-Processing Model")
+        self.setMinimumWidth(420)
+        self._success = False
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+
+        self._status = QLabel("Downloading llama-server and Qwen 2.5 model...")
+        self._status.setStyleSheet("font-size: 12px;")
+        layout.addWidget(self._status)
+
+        self._bar = QProgressBar()
+        self._bar.setMinimum(0)
+        self._bar.setMaximum(100)
+        self._bar.setValue(0)
+        self._bar.setTextVisible(True)
+        self._bar.setFormat("%v%")
+        self._bar.setMinimumHeight(28)
+        layout.addWidget(self._bar)
+
+        self._time_label = QLabel("Elapsed: 0:00")
+        self._time_label.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        layout.addWidget(self._time_label)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+
+        self._start_time = time.time()
+
+        # Elapsed timer
+        self._tick_timer = QTimer(self)
+        self._tick_timer.timeout.connect(self._tick)
+        self._tick_timer.start(500)
+
+        # Background download thread
+        self._thread = QThread()
+        self._worker = _PPDownloadWorker()
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.error.connect(self._on_error)
+        self._worker.progress.connect(self._on_progress)
+
+        self._thread.start()
+
+    def _tick(self):
+        elapsed = time.time() - self._start_time
+        m, s = divmod(int(elapsed), 60)
+        self._time_label.setText(f"Elapsed: {m}:{s:02d}")
+
+    def _on_progress(self, downloaded, total):
+        if total > 0:
+            pct = min(99, int(downloaded / total * 100))
+            self._bar.setValue(pct)
+            mb_done = downloaded / (1024 * 1024)
+            mb_total = total / (1024 * 1024)
+            self._status.setText(f"Downloading model... {mb_done:.0f} / {mb_total:.0f} MB")
+
+    def _on_finished(self):
+        self._tick_timer.stop()
+        self._bar.setValue(100)
+        self._success = True
+        self._cleanup()
+        self.accept()
+
+    def _on_error(self, msg):
+        self._tick_timer.stop()
+        self._cleanup()
+        MessageBox.critical(self, "Download Failed", f"Failed to download model:\n\n{msg}")
+        self.reject()
+
+    def _cleanup(self):
+        if self._thread:
+            self._thread.quit()
+            self._thread.wait(2000)
+            self._thread.deleteLater()
+            self._thread = None
+        if self._worker:
+            self._worker.deleteLater()
+            self._worker = None
+
+    def closeEvent(self, event):
+        self._cleanup()
+        event.accept()
+
+    @property
+    def succeeded(self):
+        return self._success
+
+
 class SettingsDialog(RoundedDialog):
     """Settings configuration dialog."""
 
@@ -457,6 +581,17 @@ class SettingsDialog(RoundedDialog):
         )
         info_label.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
         layout.addRow("", info_label)
+
+        # Post-processing checkbox
+        self.post_processing_cb = QCheckBox("Post-processing")
+        pp_desc = QLabel("Clean up grammar, punctuation, and filler words")
+        pp_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+        pp_row = QHBoxLayout()
+        pp_row.addWidget(self.post_processing_cb)
+        pp_row.addWidget(pp_desc)
+        pp_row.addStretch()
+        layout.addRow("", pp_row)
 
         group.setLayout(layout)
         return group
@@ -699,6 +834,9 @@ class SettingsDialog(RoundedDialog):
         else:
             self.typing_char_radio.setChecked(True)
 
+        # Post-processing
+        self.post_processing_cb.setChecked(self.config.get_post_processing_enabled())
+
     def save_settings(self):
         """Save settings and emit signal."""
         try:
@@ -707,6 +845,7 @@ class SettingsDialog(RoundedDialog):
             model_size = self.model_combo.currentData()
             device_idx = self.device_combo.currentData()
             use_clipboard = self.typing_paste_radio.isChecked()
+            pp_enabled = self.post_processing_cb.isChecked()
 
             # Validate hotkey (just check it's not empty)
             if not hotkey:
@@ -722,6 +861,7 @@ class SettingsDialog(RoundedDialog):
             old_model = self.config.get_model_size()
             old_device = self.config.get_audio_device()
             old_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
+            old_pp = self.config.get_post_processing_enabled()
 
             changes = []
             if hotkey != old_hotkey:
@@ -733,6 +873,8 @@ class SettingsDialog(RoundedDialog):
             if use_clipboard != old_clipboard:
                 method = "Clipboard paste" if use_clipboard else "Character-by-character"
                 changes.append(f"Entry method \u2192 {method}")
+            if pp_enabled != old_pp:
+                changes.append(f"Post-processing \u2192 {'On' if pp_enabled else 'Off'}")
 
             # Nothing changed — just close
             if not changes:
@@ -754,11 +896,22 @@ class SettingsDialog(RoundedDialog):
                     if not dlg.succeeded:
                         return
 
+            # Download post-processing model if enabling for the first time
+            if pp_enabled and not old_pp:
+                from core.post_processor import PostProcessor
+                pp = PostProcessor()
+                if not pp.is_model_downloaded():
+                    dlg = PostProcessingDownloadDialog(self)
+                    dlg.exec()
+                    if not dlg.succeeded:
+                        return
+
             # Save to config
             self.config.set_hotkey(hotkey)
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
+            self.config.set_post_processing_enabled(pp_enabled)
             self.config.save()
 
             # Emit signal

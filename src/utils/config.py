@@ -289,6 +289,14 @@ class ConfigManager:
         """Set fuzzy matching threshold."""
         self.set("dictionary", "fuzzy_threshold", value=threshold)
 
+    def get_post_processing_enabled(self):
+        """Get whether post-processing is enabled."""
+        return self.get("post_processing", "enabled", default=False)
+
+    def set_post_processing_enabled(self, enabled):
+        """Set whether post-processing is enabled."""
+        self.set("post_processing", "enabled", value=enabled)
+
     def get_statistics(self):
         """Get the statistics dict."""
         return self.get("statistics", default={})

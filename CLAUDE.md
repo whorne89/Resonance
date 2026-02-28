@@ -23,6 +23,7 @@ src/
     keyboard_typer.py        - Keyboard input simulation (type or paste)
     hotkey_manager.py        - Global hotkey registration (pynput)
     dictionary.py            - Post-transcription word replacement (exact + fuzzy)
+    post_processor.py        - LLM post-processing via llama-server (grammar/punctuation/filler cleanup)
     sound_effects.py         - Notification tones via winsound (WAV files)
   gui/
     system_tray.py           - System tray icon with context menu
@@ -53,7 +54,7 @@ src/
 ## Transcription Flow
 1. User holds hotkey → start tone plays → AudioRecorder captures audio → overlay shows recording state
 2. User releases hotkey → stop tone plays → audio sent to TranscriptionWorker (QThread) → overlay shows processing state
-3. Worker calls Transcriber.transcribe() → returns text
+3. Worker calls Transcriber.transcribe() → PostProcessor.process() (if enabled) → returns text
 4. VTTApplication.on_transcription_complete() applies dictionary replacements via DictionaryProcessor
 5. KeyboardTyper.type_text() outputs to active window → overlay fades out
 
@@ -87,6 +88,14 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - `winsound.PlaySound` cannot combine `SND_MEMORY` + `SND_ASYNC` on Windows — must write WAV files to disk and use `SND_FILENAME | SND_ASYNC`
 - `uv pip install` may target system Python; use `--python .venv/Scripts/python.exe` to be safe
 
+## Post-Processing
+- **Backend**: llama-server (llama.cpp) with Qwen 2.5 0.5B Instruct GGUF (q4_k_m, ~400 MB)
+- **Scope**: Grammar, punctuation, capitalization fixes + filler word removal (um, uh, like, you know)
+- **Lifecycle**: Tied to settings checkbox — created when ON, `.shutdown()` kills llama-server when OFF
+- **Lazy loading**: Server subprocess starts on first `.process()` call, not at toggle-on
+- **Pipeline**: Whisper → PostProcessor.process() → DictionaryProcessor.apply() → KeyboardTyper
+- **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
+
 ## Abandoned Work
-- **LLM post-processing** — tried llama-server (llama.cpp) with Qwen2.5 0.5B/1.5B/3B/7B for grammar cleanup and formatting commands. Grammar worked but formatting commands (bullets, numbered lists, scratch that) failed — generic models can't reliably interpret voice commands as formatting. Would need fine-tuned models or cloud APIs. Removed.
+- **LLM formatting commands** — tried Qwen2.5 0.5B-7B for voice formatting commands (bullets, numbered lists, scratch that). Generic models can't reliably interpret these. Grammar/punctuation cleanup was re-added without formatting commands.
 - **pywhispercpp (whisper.cpp)** — tried for Vulkan GPU support, reverted because CPU performance was ~2x slower than faster-whisper.
