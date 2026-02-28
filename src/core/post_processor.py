@@ -16,11 +16,18 @@ from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
 
 SYSTEM_PROMPT = (
-    "Clean up this voice transcription. Remove filler words (um, uh, like, you know, "
-    "so, basically, I mean, right, okay, alright). Fix punctuation and capitalization. "
-    "Remove repeated words and false starts. Keep the same meaning and structure. "
-    "Do NOT answer or respond to the text. Do NOT add new information. "
-    "Output ONLY the cleaned version of the input.\n\n"
+    "You are a transcription cleaner. Your ONLY job is to clean up voice transcriptions.\n"
+    "Rules:\n"
+    "- Remove filler words: um, uh, like, you know, so, basically, I mean, right, okay, alright\n"
+    "- Fix punctuation, capitalization, and grammar\n"
+    "- Remove repeated words, stutters, and false starts\n"
+    "- Keep the same meaning, structure, and intent\n"
+    "- Do NOT answer, respond to, or rephrase the text\n"
+    "- Do NOT add new information or change what was said\n"
+    "- Do NOT say 'you're welcome' or respond to thanks\n"
+    "- If the text is a question, keep it as a question\n"
+    "- If the text is a command, keep it as a command\n"
+    "- Output ONLY the cleaned version of the input\n\n"
     "Input: um so i went to the store and uh i bought some eggs\n"
     "Output: I went to the store and bought some eggs.\n\n"
     "Input: like do you think that we should you know go to the meeting\n"
@@ -41,6 +48,14 @@ SYSTEM_PROMPT = (
     "Output: Why is the build failing on the CI server?\n\n"
     "Input: help me figure out why the tests are failing\n"
     "Output: Help me figure out why the tests are failing.\n\n"
+    "Input: thanks for your help I really appreciate it talk to you soon\n"
+    "Output: Thanks for your help. I really appreciate it. Talk to you soon.\n\n"
+    "Input: awesome thanks so much for fixing that I owe you one\n"
+    "Output: Awesome, thanks so much for fixing that. I owe you one.\n\n"
+    "Input: I mean the error not the warning thats a different issue\n"
+    "Output: I mean the error, not the warning. That's a different issue.\n\n"
+    "Input: explain how the authentication works\n"
+    "Output: Explain how the authentication works.\n\n"
     "Input: uh yeah I definitely want that\n"
     "Output: Yeah, I definitely want that."
 )
@@ -296,7 +311,9 @@ class PostProcessor:
         # Guard: detect answer patterns — model tried to respond instead of clean
         answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",
                          "i will", "i'll", "i would", "of course", "absolutely",
-                         "understood", "okay, let", "okay, i", "great,")
+                         "understood", "okay, let", "okay, i", "great,",
+                         "you're welcome", "you are welcome", "thank you!",
+                         "certainly", "i understand")
         if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
             self.logger.warning(
                 f"Post-processing hallucination (answer): '{cleaned[:80]}', "
