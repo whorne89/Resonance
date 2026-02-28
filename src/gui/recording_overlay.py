@@ -5,7 +5,7 @@ Floating pill-shaped widget showing recording/processing state with live wavefor
 
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QGuiApplication
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont, QFontMetrics, QGuiApplication
 
 
 class RecordingOverlay(QWidget):
@@ -25,6 +25,9 @@ class RecordingOverlay(QWidget):
     BOTTOM_MARGIN = 60
     BAR_COUNT = 7
     WAVEFORM_UPDATE_MS = 50
+    BADGE_HEIGHT = 22
+    BADGE_GAP = 4
+    BADGE_SPACING = 3  # Gap between stacked badges
 
     # Colors
     BG_COLOR = QColor(26, 26, 46, 217)       # #1a1a2e at ~85% opacity
@@ -46,6 +49,9 @@ class RecordingOverlay(QWidget):
 
         # Audio source (set by caller)
         self._audio_recorder = None
+
+        # Feature badges (e.g. ["Post-processing", "OCR"])
+        self._features = []
 
         # Window setup
         self.setWindowFlags(
@@ -71,13 +77,31 @@ class RecordingOverlay(QWidget):
         """Set the audio recorder to read RMS levels from."""
         self._audio_recorder = recorder
 
+    def set_features(self, features):
+        """Set active feature labels shown as a badge above the pill.
+
+        Args:
+            features: list of feature names, e.g. ["Post-processing"]
+        """
+        self._features = list(features)
+
+    def _total_height(self):
+        """Total widget height including badge area if features are active."""
+        n = len(self._features)
+        if n:
+            badges = n * self.BADGE_HEIGHT + (n - 1) * self.BADGE_SPACING + self.BADGE_GAP
+            return self.PILL_HEIGHT + badges
+        return self.PILL_HEIGHT
+
     def _position_on_screen(self):
         """Position the overlay at bottom-center of the primary screen."""
+        h = self._total_height()
+        self.setFixedSize(self.PILL_WIDTH, h)
         screen = QGuiApplication.primaryScreen()
         if screen:
             geom = screen.availableGeometry()
             x = geom.x() + (geom.width() - self.PILL_WIDTH) // 2
-            y = geom.y() + geom.height() - self.PILL_HEIGHT - self.BOTTOM_MARGIN
+            y = geom.y() + geom.height() - h - self.BOTTOM_MARGIN
             self.move(x, y)
 
     # --- Public API ---
@@ -176,7 +200,17 @@ class RecordingOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # Offset: pill is drawn at the bottom of the widget
+        pill_y = self._total_height() - self.PILL_HEIGHT
+
+        # Draw feature badge(s) above the pill
+        if self._features:
+            self._paint_badge(painter)
+
         # Draw pill background
+        painter.save()
+        painter.translate(0, pill_y)
+
         path = QPainterPath()
         path.addRoundedRect(
             0.5, 0.5,
@@ -193,7 +227,36 @@ class RecordingOverlay(QWidget):
         elif self._state == "processing":
             self._paint_processing(painter)
 
+        painter.restore()
         painter.end()
+
+    def _paint_badge(self, painter):
+        """Draw stacked feature badges centered above the main pill."""
+        font = QFont()
+        font.setPixelSize(12)
+        fm = QFontMetrics(font)
+        painter.setFont(font)
+
+        for i, label in enumerate(self._features):
+            y = i * (self.BADGE_HEIGHT + self.BADGE_SPACING)
+            text_width = fm.horizontalAdvance(label)
+            badge_w = int(text_width + 18)
+            badge_r = self.BADGE_HEIGHT // 2
+            badge_x = (self.PILL_WIDTH - badge_w) / 2
+
+            path = QPainterPath()
+            path.addRoundedRect(badge_x, y + 0.5, badge_w, self.BADGE_HEIGHT - 1, badge_r, badge_r)
+
+            painter.setPen(QPen(self.BORDER_COLOR, 1))
+            painter.setBrush(QBrush(QColor(26, 26, 46, 200)))
+            painter.drawPath(path)
+
+            painter.setPen(QColor(255, 255, 255, 160))
+            painter.drawText(
+                int(badge_x), y, badge_w, self.BADGE_HEIGHT,
+                Qt.AlignmentFlag.AlignCenter,
+                label,
+            )
 
     def _paint_recording(self, painter):
         """Draw recording indicator: pulsing red dot + waveform bars."""

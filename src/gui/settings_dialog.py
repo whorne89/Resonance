@@ -559,6 +559,7 @@ class SettingsDialog(RoundedDialog):
         """Create transcription engine configuration group."""
         group = QGroupBox("Speech Recognition")
         layout = QFormLayout()
+        layout.setVerticalSpacing(4)
 
         # Model size dropdown
         self.model_combo = QComboBox()
@@ -570,7 +571,14 @@ class SettingsDialog(RoundedDialog):
         ]
         for display_name, model_id in models:
             self.model_combo.addItem(display_name, userData=model_id)
-        layout.addRow("Quality:", self.model_combo)
+
+        quality_col = QVBoxLayout()
+        quality_col.setSpacing(2)
+        quality_col.addWidget(self.model_combo)
+        quality_desc = QLabel("Select the quality level for speech recognition.")
+        quality_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        quality_col.addWidget(quality_desc)
+        layout.addRow("Quality:", quality_col)
 
         # Model info
         info_label = QLabel(
@@ -582,15 +590,14 @@ class SettingsDialog(RoundedDialog):
         info_label.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
         layout.addRow("", info_label)
 
-        # Post-processing checkbox
-        self.post_processing_cb = QCheckBox("Post-processing (AI)")
+        # Post-processing checkbox + description (same pattern as Quality)
+        self.post_processing_cb = QCheckBox("Post-Processing (AI)")
         pp_desc = QLabel(
-            "Uses a local AI model to clean up transcriptions — fixes grammar,\n"
-            "punctuation, and capitalization, removes filler words (um, uh, like),\n"
-            "and corrects false starts and repeated words"
+            "Fixes grammar, capitalization, punctuation, contractions,\n"
+            "quotations, and sentence breaks. Removes filler words\n"
+            "and stutters. Powered by Qwen 2.5 (local, offline)."
         )
         pp_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
-        pp_desc.setWordWrap(True)
 
         pp_col = QVBoxLayout()
         pp_col.setSpacing(2)
@@ -730,6 +737,7 @@ class SettingsDialog(RoundedDialog):
 
         avg_words = round(total_words / total_transcriptions) if total_transcriptions > 0 else 0
         time_saved_seconds = (total_words / 40.0) * 60  # typing at 40 WPM
+        avg_wpm = round(total_words / (total_seconds / 60)) if total_seconds > 0 else 0
 
         # Avg recording time per day (since first use)
         avg_rec_per_day = 0.0
@@ -750,7 +758,7 @@ class SettingsDialog(RoundedDialog):
             ("Words Dictated",    f"{total_words:,}"),
             ("Transcriptions",    f"{total_transcriptions:,}"),
             ("Avg Words",         f"{avg_words:,}"),
-            ("Characters",        f"{total_characters:,}"),
+            ("Avg WPM",           f"{avg_wpm:,}"),
             ("Time Saved",        self._format_duration(time_saved_seconds)),
             ("Time Recorded",     self._format_duration(total_seconds)),
             ("Avg Per Day",       self._format_duration(avg_rec_per_day)),

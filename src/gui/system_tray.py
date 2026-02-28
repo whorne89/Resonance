@@ -171,7 +171,7 @@ class SystemTrayIcon(QSystemTrayIcon):
         elif len(args) >= 1:
             self._toast.show_toast(args[0])
 
-    def show_message(self, title, message, icon_type=QSystemTrayIcon.MessageIcon.Information, duration=3000):
+    def show_message(self, title, message, icon_type=QSystemTrayIcon.MessageIcon.Information, duration=3000, details=""):
         """
         Show a toast notification overlay.
 
@@ -180,8 +180,9 @@ class SystemTrayIcon(QSystemTrayIcon):
             message: Notification message
             icon_type: Icon type (unused — kept for API compatibility)
             duration: Duration in milliseconds (unused — toast auto-dismisses)
+            details: Optional bold text shown below the message
         """
-        self._toast.show_toast(message)
+        self._toast.show_toast(message, details=details)
 
     def show_transcription_complete(self, text):
         """
@@ -232,18 +233,26 @@ class AboutDialog(RoundedDialog):
         layout.setSpacing(12)
 
         title = QLabel("Resonance")
-        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        title.setStyleSheet("font-size: 28px; font-weight: bold;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
+        subtitle = QLabel("Voice-to-Text Dictation")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("font-size: 13px; color: rgba(255, 255, 255, 160);")
+        layout.addWidget(subtitle)
+
+        layout.addSpacing(4)
+
         desc = QLabel(
-            "Voice-to-text powered by local Whisper AI.\n\n"
-            "Hold your hotkey while speaking, then release\n"
-            "to transcribe. No internet required \u2014\n"
-            "completely private and secure."
+            "Local speech recognition powered by Whisper AI\n"
+            "with post-processing support from Qwen 2.5.\n\n"
+            "Hold your hotkey, speak, and release to transcribe\n"
+            "directly into any application.\n\n"
+            "No internet required \u2014 completely private and secure."
         )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setStyleSheet("color: rgba(255, 255, 255, 180);")
+        desc.setStyleSheet("color: rgba(255, 255, 255, 180); line-height: 1.3;")
         layout.addWidget(desc)
 
         author = QLabel("Created by William Horne")

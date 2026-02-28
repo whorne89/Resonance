@@ -293,8 +293,11 @@ class VTTApplication(QObject):
                     success = self.keyboard_typer.type_text(text)
                     if success:
                         self.logger.info("Text output successful")
-                        if self.keyboard_typer.use_clipboard and self.clipboard_toast:
-                            self.clipboard_toast.show_toast()
+                        if self.clipboard_toast:
+                            if self.keyboard_typer.use_clipboard:
+                                self.clipboard_toast.show_toast("Text entered")
+                            else:
+                                self.clipboard_toast.show_toast("Typing")
                     else:
                         self.logger.warning("Text output failed")
                 except Exception as e:
@@ -433,6 +436,18 @@ class VTTApplication(QObject):
             self.post_processor.shutdown()
             self.post_processor = None
 
+        # Update overlay feature badges
+        self._update_overlay_features()
+
+    def _update_overlay_features(self):
+        """Update the recording overlay's feature badges based on config."""
+        if not self.overlay:
+            return
+        features = []
+        if self.config.get_post_processing_enabled():
+            features.append("Post-Processing: ON")
+        self.overlay.set_features(features)
+
     def quit(self):
         """Quit application."""
         self.logger.info("Shutting down...")
@@ -472,6 +487,7 @@ def main():
     overlay = RecordingOverlay()
     overlay.set_audio_recorder(vtt_app.audio_recorder)
     vtt_app.overlay = overlay
+    vtt_app._update_overlay_features()
 
     # Create clipboard toast indicator
     vtt_app.clipboard_toast = ClipboardToast()
@@ -484,11 +500,21 @@ def main():
     tray_icon.settings_requested.connect(vtt_app.show_settings)
     tray_icon.quit_requested.connect(vtt_app.quit)
 
-    # Show ready message
-    tray_icon.show_message(
-        "Service Started",
-        f"To start dictation, press {vtt_app.config.get_hotkey_display()}"
+    # Build startup message with details
+    model_names = {"tiny": "Fastest", "base": "Balanced", "small": "Accurate", "medium": "Precision"}
+    model_id = vtt_app.config.get_model_size()
+    model_label = model_names.get(model_id, model_id)
+    pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+    use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
+    entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+
+    startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
+    startup_details = (
+        f"Model: {model_label}\n"
+        f"Post-processing: {pp_status}\n"
+        f"Entry: {entry_method}"
     )
+    tray_icon.show_message("Service Started", startup_msg, details=startup_details)
 
     # Run application
     sys.exit(app.exec())

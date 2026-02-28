@@ -47,7 +47,7 @@ src/
 - **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
-- **Single source of truth**: `version` field in `pyproject.toml` (currently 1.3.0)
+- **Single source of truth**: `version` field in `pyproject.toml` (currently 2.1.0)
 - About dialog reads via `importlib.metadata.version('resonance')` — never hardcode version strings
 - Package must be installed in editable mode (`uv pip install -e .`) for importlib.metadata to work
 
@@ -90,11 +90,20 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 
 ## Post-Processing
 - **Backend**: llama-server (llama.cpp) with Qwen 2.5 1.5B Instruct GGUF (q4_k_m, ~1.1 GB)
-- **Scope**: Grammar, punctuation, capitalization fixes + filler word removal (um, uh, like, you know)
+- **Scope**: Grammar, capitalization, punctuation (periods, commas, question marks, quotation marks), contractions, sentence breaks, filler word removal (um, uh), and stutter/repeat cleanup
+- **Prompt philosophy**: Conservative — keep every word the speaker said, only fix formatting. Do NOT summarize, shorten, or rephrase. Three explicit rules: (1) remove um/uh/stutters, (2) fix capitalization + punctuation, (3) fix grammar.
+- **Hallucination guards**: Four-layer system in `_process_via_api()`: (1) filler-only input returns empty, (2) length guard rejects output >1.5x input, (3) answer-pattern guard, (4) question-answer guard
 - **Lifecycle**: Tied to settings checkbox — created when ON, `.shutdown()` kills llama-server when OFF
 - **Lazy loading**: Server subprocess starts on first `.process()` call, not at toggle-on
 - **Pipeline**: Whisper → PostProcessor.process() → DictionaryProcessor.apply() → KeyboardTyper
 - **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
+
+## UI Components (v2.1)
+- **ToastNotification**: Dark pill at bottom-right, supports multi-line messages + bold details section. "Resonance" header at 15px bold.
+- **ClipboardToast**: Small centered pill at bottom, shows "Text entered" (clipboard) or "Typing" (char-by-char)
+- **RecordingOverlay**: Pill at bottom-center with waveform. Supports stacked feature badges above pill (e.g. "Post-Processing: ON") — only visible when features are enabled
+- **AboutDialog**: RoundedDialog with 28px title, subtitle, description mentioning Whisper + Qwen, author, version from importlib.metadata
+- **Startup toast**: Shows hotkey, model name, post-processing status, and entry method (details in bold)
 
 ## Abandoned Work
 - **LLM formatting commands** — tried Qwen2.5 0.5B-7B for voice formatting commands (bullets, numbered lists, scratch that). Generic models can't reliably interpret these. Grammar/punctuation cleanup was re-added without formatting commands.

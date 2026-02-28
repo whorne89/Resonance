@@ -21,7 +21,7 @@ class ToastNotification(QWidget):
 
     # Dimensions
     WIDTH = 320
-    HEIGHT = 80
+    BASE_HEIGHT = 80
     RADIUS = 12
     MARGIN = 20  # Distance from screen edges
 
@@ -45,9 +45,11 @@ class ToastNotification(QWidget):
             | Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(self.WIDTH, self.HEIGHT)
+        self.setFixedSize(self.WIDTH, self.BASE_HEIGHT)
 
         self._message = ""
+        self._details = ""
+        self._height = self.BASE_HEIGHT
         self._icon_pixmap = None
         self._fade_anim = None
         self._hold_timer = QTimer(self)
@@ -75,14 +77,51 @@ class ToastNotification(QWidget):
         if screen:
             geom = screen.availableGeometry()
             x = geom.x() + geom.width() - self.WIDTH - self.MARGIN
-            y = geom.y() + geom.height() - self.HEIGHT - self.MARGIN
+            y = geom.y() + geom.height() - self._height - self.MARGIN
             self.move(x, y)
 
     # --- Public API ---
 
-    def show_toast(self, message):
-        """Show a toast with the given message. Replaces any active toast."""
+    def show_toast(self, message, details=""):
+        """Show a toast with the given message and optional bold details below.
+
+        Args:
+            message: Main message text
+            details: Optional bold text shown below the message
+        """
         self._message = message
+        self._details = details
+
+        # Calculate height based on content
+        from PySide6.QtGui import QFontMetrics
+        body_font = QFont()
+        body_font.setPixelSize(13)
+        fm = QFontMetrics(body_font)
+        content_x = 16
+        max_width = self.WIDTH - content_x - 16
+
+        msg_rect = fm.boundingRect(
+            0, 0, max_width, 999,
+            Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
+            message,
+        )
+        total_body = msg_rect.height()
+
+        if details:
+            bold_font = QFont()
+            bold_font.setPixelSize(13)
+            bold_font.setBold(True)
+            bfm = QFontMetrics(bold_font)
+            det_rect = bfm.boundingRect(
+                0, 0, max_width, 999,
+                Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
+                details,
+            )
+            total_body += 4 + det_rect.height()  # 4px gap between message and details
+
+        # header takes ~44px, body needs total_body, plus 12px bottom padding
+        self._height = max(self.BASE_HEIGHT, 44 + total_body + 12)
+        self.setFixedSize(self.WIDTH, self._height)
 
         # Stop any running animations/timers
         self._stop_fade()
@@ -135,10 +174,11 @@ class ToastNotification(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Clipping path for rounded rectangle
+        h = self._height
         path = QPainterPath()
         path.addRoundedRect(
             0.5, 0.5,
-            self.WIDTH - 1, self.HEIGHT - 1,
+            self.WIDTH - 1, h - 1,
             self.RADIUS, self.RADIUS,
         )
 
@@ -151,38 +191,58 @@ class ToastNotification(QWidget):
         painter.setClipPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(self.ACCENT_COLOR))
-        painter.drawRoundedRect(0, 0, 3, self.HEIGHT, 1, 1)
+        painter.drawRoundedRect(0, 0, 3, h, 1, 1)
         painter.setClipping(False)
 
         # Header: icon + "Resonance"
-        header_y = 20
+        header_y = 22
         content_x = 16
 
         if self._icon_pixmap:
-            painter.drawPixmap(content_x, header_y - 12, self._icon_pixmap)
+            painter.drawPixmap(content_x, header_y - 13, self._icon_pixmap)
             text_x = content_x + 22
         else:
             text_x = content_x
 
         title_font = QFont()
-        title_font.setPixelSize(11)
+        title_font.setPixelSize(15)
         title_font.setBold(True)
         painter.setFont(title_font)
-        painter.setPen(QColor(255, 255, 255, 180))
+        painter.setPen(QColor(255, 255, 255, 220))
         painter.drawText(text_x, header_y, "Resonance")
 
         # Message body
-        body_font = QFont()
-        body_font.setPixelSize(13)
-        painter.setFont(body_font)
-        painter.setPen(QColor(255, 255, 255, 204))  # ~80% opacity
-
-        # Draw message with elision if too long
+        from PySide6.QtCore import QRect
         from PySide6.QtGui import QFontMetrics
-        fm = QFontMetrics(body_font)
+
+        body_font = QFont()
+        body_font.setPixelSize(12)
+        painter.setFont(body_font)
+        painter.setPen(QColor(255, 255, 255, 190))
+
         max_width = self.WIDTH - content_x - 16
-        elided = fm.elidedText(self._message, Qt.TextElideMode.ElideRight, max_width)
-        painter.drawText(content_x, header_y + 24, elided)
+        body_top = header_y + 14
+        msg_rect = QRect(content_x, body_top, max_width, self._height - body_top)
+        painter.drawText(msg_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self._message)
+
+        # Bold details below message
+        if self._details:
+            fm = QFontMetrics(body_font)
+            msg_bound = fm.boundingRect(
+                0, 0, max_width, 999,
+                Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
+                self._message,
+            )
+            det_top = body_top + msg_bound.height() + 4
+
+            bold_font = QFont()
+            bold_font.setPixelSize(13)
+            bold_font.setBold(True)
+            painter.setFont(bold_font)
+            painter.setPen(QColor(255, 255, 255, 230))
+
+            det_rect = QRect(content_x, det_top, max_width, self._height - det_top)
+            painter.drawText(det_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self._details)
 
         painter.end()
 
@@ -220,6 +280,7 @@ class ClipboardToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(self.WIDTH, self.HEIGHT)
 
+        self._text = "Text entered"
         self._fade_anim = None
         self._hold_timer = QTimer(self)
         self._hold_timer.setSingleShot(True)
@@ -234,8 +295,9 @@ class ClipboardToast(QWidget):
             y = geom.y() + geom.height() - self.HEIGHT - self.MARGIN
             self.move(x, y)
 
-    def show_toast(self):
-        """Show the 'Copied to clipboard' indicator."""
+    def show_toast(self, text="Text entered"):
+        """Show a brief indicator with the given text."""
+        self._text = text
         self._stop_fade()
         self._hold_timer.stop()
 
@@ -294,6 +356,6 @@ class ClipboardToast(QWidget):
         painter.drawText(
             0, 0, self.WIDTH, self.HEIGHT,
             Qt.AlignmentFlag.AlignCenter,
-            "Copied to clipboard",
+            self._text,
         )
         painter.end()
