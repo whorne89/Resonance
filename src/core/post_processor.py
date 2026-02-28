@@ -17,8 +17,8 @@ from utils.logger import get_logger
 
 SYSTEM_PROMPT = (
     "Clean up this voice transcription. Remove filler words (um, uh, like, you know, "
-    "so, basically, I mean, right, okay). Fix punctuation and capitalization. "
-    "Remove repeated words and false starts. "
+    "so, basically, I mean, right, okay, alright). Fix punctuation and capitalization. "
+    "Remove repeated words and false starts. Keep the same meaning and structure. "
     "Do NOT answer or respond to the text. Do NOT add new information. "
     "Output ONLY the cleaned version of the input.\n\n"
     "Input: um so i went to the store and uh i bought some eggs\n"
@@ -27,6 +27,8 @@ SYSTEM_PROMPT = (
     "Output: Do you think that we should go to the meeting?\n\n"
     "Input: the the project is uh almost done i think\n"
     "Output: The project is almost done, I think.\n\n"
+    "Input: basically the whole thing needs to be rewritten\n"
+    "Output: The whole thing needs to be rewritten.\n\n"
     "Input: so basically I was I was thinking we should you know try a different approach\n"
     "Output: I was thinking we should try a different approach.\n\n"
     "Input: okay so like the server is um not responding right now\n"
@@ -37,6 +39,8 @@ SYSTEM_PROMPT = (
     "Output: Where did you put the config file?\n\n"
     "Input: why is the build like failing on the CI server\n"
     "Output: Why is the build failing on the CI server?\n\n"
+    "Input: help me figure out why the tests are failing\n"
+    "Output: Help me figure out why the tests are failing.\n\n"
     "Input: uh yeah I definitely want that\n"
     "Output: Yeah, I definitely want that."
 )
@@ -97,6 +101,13 @@ class PostProcessor:
                 self.logger.error(f"Failed to load post-processor: {e}", exc_info=True)
                 self._loaded = False
 
+    # Words that are pure filler — if input is ONLY these, skip LLM
+    FILLER_WORDS = frozenset({
+        "um", "uh", "like", "you", "know", "so", "basically",
+        "i", "mean", "right", "okay", "ok", "alright", "well",
+        "yeah", "hmm", "ah", "oh",
+    })
+
     def process(self, raw_text):
         """
         Process transcribed text to fix grammar, punctuation, and filler words.
@@ -108,6 +119,12 @@ class PostProcessor:
             Corrected text, or original text if processing fails
         """
         if not raw_text:
+            return ""
+
+        # Short input that is entirely filler words — skip LLM to avoid hallucination
+        words = raw_text.lower().split()
+        if len(words) <= 4 and all(w.strip(".,!?") in self.FILLER_WORDS for w in words):
+            self.logger.info(f"Post-processing: '{raw_text}' -> '' (all fillers)")
             return ""
 
         if not self._loaded:
@@ -288,14 +305,22 @@ class PostProcessor:
             return text
 
         # Guard: input is a question but output changed subject (model answered)
+        # Only apply to short inputs (≤20 words after filler strip) to avoid
+        # false positives on longer dictation starting with "what happens is..."
         question_words = ("what ", "where ", "why ", "how ", "when ", "who ",
                           "which ", "can ", "could ", "should ", "would ",
                           "is ", "are ", "do ", "does ", "will ")
-        text_lower = text.lower().lstrip("um uh so like okay basically alright ")
-        if text_lower.startswith(question_words):
+        # Strip leading filler WORDS (not characters) to find the real start
+        filler_prefixes = {"um", "uh", "so", "like", "okay", "ok", "basically",
+                           "alright", "well", "right"}
+        words = text.lower().split()
+        while words and words[0] in filler_prefixes:
+            words.pop(0)
+        text_stripped = " ".join(words)
+        if len(words) <= 20 and text_stripped.startswith(question_words):
             # Input was a question — output must also be a question (end with ?)
             # or at least start with the same question word
-            first_word_in = text_lower.split()[0]
+            first_word_in = text_stripped.split()[0]
             first_word_out = cleaned.lower().split()[0] if cleaned else ""
             if first_word_in != first_word_out and not cleaned.endswith("?"):
                 self.logger.warning(
