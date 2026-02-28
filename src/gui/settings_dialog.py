@@ -583,15 +583,20 @@ class SettingsDialog(RoundedDialog):
         layout.addRow("", info_label)
 
         # Post-processing checkbox
-        self.post_processing_cb = QCheckBox("Post-processing")
-        pp_desc = QLabel("Clean up grammar, punctuation, and filler words")
+        self.post_processing_cb = QCheckBox("Post-processing (AI)")
+        pp_desc = QLabel(
+            "Uses a local AI model to clean up transcriptions — fixes grammar,\n"
+            "punctuation, and capitalization, removes filler words (um, uh, like),\n"
+            "and corrects false starts and repeated words"
+        )
         pp_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        pp_desc.setWordWrap(True)
 
-        pp_row = QHBoxLayout()
-        pp_row.addWidget(self.post_processing_cb)
-        pp_row.addWidget(pp_desc)
-        pp_row.addStretch()
-        layout.addRow("", pp_row)
+        pp_col = QVBoxLayout()
+        pp_col.setSpacing(2)
+        pp_col.addWidget(self.post_processing_cb)
+        pp_col.addWidget(pp_desc)
+        layout.addRow("", pp_col)
 
         group.setLayout(layout)
         return group
