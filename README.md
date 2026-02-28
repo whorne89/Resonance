@@ -14,16 +14,13 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 - **Sound effects**: Audible start/stop tones with custom sound support
 - **Simple interface**: Dark-themed system tray application with toast notifications
 - **Configurable**: Customize hotkey, model size, audio device, and typing method
+- **Automatic model download**: Downloads the speech model on first launch with progress animation
 
 ## Requirements
 
-- **Windows 10/11**, **Linux**, or **macOS**
-- Python 3.9 or higher
+- **Windows 10 or 11**
+- Python 3.12 (managed via uv)
 - Microphone
-- **Platform-specific audio libraries**:
-  - **Linux**: `libportaudio2` and `portaudio19-dev`
-  - **macOS**: PortAudio (installed via Homebrew)
-  - **Windows**: No additional setup needed
 
 ## Installation
 
@@ -31,27 +28,12 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 
 1. Clone or download this repository
 2. **Install uv** (if not already installed):
-   - **Windows (PowerShell):**
-     ```powershell
-     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-     ```
-   - **Linux / macOS:**
-     ```bash
-     curl -LsSf https://astral.sh/uv/install.sh | sh
-     ```
-   - **Alternative (any OS):**
-     ```bash
-     pip install uv
-     ```
-3. **Install system audio libraries** (Linux/macOS only):
-   - **Linux**: `sudo apt-get install libportaudio2 portaudio19-dev`
-   - **macOS**: `brew install portaudio`
-   - **Windows**: No additional setup needed
-4. **Run the application:**
-   - **Windows**: Double-click `START RESONANCE.bat`
-   - **Linux / macOS**: `uv run python src/main.py`
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+3. **Run the application:** Double-click `START RESONANCE.bat`
 
-### Option 2: Build Executable (Windows)
+### Option 2: Build Executable
 
 1. Clone or download this repository
 2. Install `uv` (see step 2 above)
@@ -62,11 +44,12 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 ## Usage
 
 1. Launch the application (system tray icon will appear)
-2. Open any application where you want to type
-3. **Press and hold `Ctrl+Alt+R`** (default hotkey)
-4. Speak into your microphone
-5. **Release the hotkey** to transcribe
-6. Text will be automatically typed into the active window
+2. On first launch, the Balanced model (~140 MB) downloads automatically
+3. Open any application where you want to type
+4. **Press and hold `Ctrl+Alt`** (default hotkey)
+5. Speak into your microphone
+6. **Release the hotkey** to transcribe
+7. Text will be automatically typed into the active window
 
 ## Configuration
 
@@ -75,19 +58,21 @@ Right-click the system tray icon and select **Settings** to configure:
 - **Hotkey**: Change the push-to-talk keyboard shortcut
 - **Quality**: Choose a Whisper model for speech recognition
   - **Fastest**: Whisper Tiny (~70 MB), sub-second
-  - **Balanced**: Whisper Base (~140 MB), sub-second
+  - **Balanced**: Whisper Base (~140 MB), sub-second *(default)*
   - **Accurate**: Whisper Small (~500 MB), ~2s
   - **Precision**: Whisper Medium (~1.5 GB), ~5s
 - **Post-Processing (AI)**: Enable/disable AI-powered transcription cleanup using Qwen 2.5 1.5B (downloaded automatically, runs locally via llama.cpp)
 - **Audio Device**: Select which microphone to use
 - **Entry Method**: Choose between clipboard paste or character-by-character typing
 - **Custom Dictionary**: Add word replacements applied after transcription
+- **Usage Statistics**: Track words dictated, transcriptions, time saved, and more
 
 ## Technical Details
 
 ### Technology Stack
 
-- **PySide6**: GUI framework (system tray, settings, overlays)
+- **Python 3.12** (pinned via `.python-version`, managed by uv)
+- **PySide6**: GUI framework (system tray, settings, overlays, toast notifications)
 - **sounddevice**: Audio recording
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
@@ -106,11 +91,11 @@ Right-click the system tray icon and select **Settings** to configure:
 
 ## Troubleshooting
 
-### Windows: "uv is not recognized" error
+### "uv is not recognized" error
 
 Make sure `uv` is installed (see Installation step 2) and restart your terminal/command prompt after installation to refresh your PATH.
 
-### OneDrive/Cloud Sync Error (Windows)
+### OneDrive/Cloud Sync Error
 
 The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
 
@@ -131,12 +116,12 @@ The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink is
 ### Text not typing into application
 
 - Some security-focused applications may block simulated keyboard input
-- Try the clipboard fallback option in Settings (if available)
+- Try switching to clipboard paste in Settings
 
 ### First run is slow
 
-- The Whisper model needs to be downloaded on first use (~500MB for small model)
-- Models are cached locally, subsequent runs will be faster
+- The Whisper model downloads automatically on first launch (~140 MB for the default Balanced model)
+- Models are cached locally, subsequent runs start instantly
 
 ## License
 
@@ -144,20 +129,29 @@ MIT License
 
 ## Changelog
 
+### v2.2.0
+- **Scrollable settings dialog**: Settings now scroll vertically on small screens with fixed Save/Cancel buttons at bottom
+- **Startup model download**: Automatically downloads the speech model on first launch with animated progress toast; hotkey is disabled until download completes
+- **Default model changed**: New installations default to Balanced (base, ~140 MB) instead of Accurate (small, ~500 MB) for faster first-run
+- **No speech detected**: Recording overlay shows "No speech detected" in red when transcription returns empty
+- **Scroll wheel fix**: Mouse wheel no longer accidentally changes dropdown selections while scrolling settings
+- **Improved scrollbar styling**: Thinner, transparent scrollbar that blends with the dark theme
+
 ### v2.1.0
 - **AI post-processing**: Local Qwen 2.5 model cleans up grammar, punctuation, capitalization, contractions, quotations, sentence breaks, filler words, and stutters
 - **Recording overlay badges**: Shows active features (Post-Processing: ON) above the recording pill
 - **Startup toast**: Displays model, post-processing status, and entry method on launch
 - **Clipboard/typing toast**: Visual confirmation showing "Text entered" or "Typing" after transcription
-- **Usage statistics**: Added average words per minute stat
-- **UI improvements**: Larger "Resonance" header in toast notifications, updated About dialog, refined settings descriptions
+- **Overlay typing states**: Green "Complete" and "Text Entered" states, animated dots during character-by-character output
+- **Usage statistics**: Dashboard with 8 stat cards (words dictated, transcriptions, time saved, avg WPM, and more)
 
 ### v2.0.0
-- Dark theme with rounded dialogs
-- Model download UI
-- Recording overlay with live waveform
+- Dark theme with rounded frameless dialogs
+- Model download progress UI in settings
+- Recording overlay with live waveform visualization
 - Custom dictionary with fuzzy matching
-- Sound effects (start/stop tones)
+- Sound effects (start/stop tones) with custom WAV support
+- Thread-safe hotkey handling
 
 ## Credits
 
