@@ -547,28 +547,28 @@ def main():
         load_worker.moveToThread(load_thread)
         load_thread.started.connect(load_worker.run)
 
-        def _show_startup_toast():
-            """Show the normal startup toast after download completes."""
-            pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-            use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
-            entry_method = "Clipboard" if use_clipboard else "Character-by-character"
-
-            startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
-            startup_details = (
-                f"Model: {model_label}\n"
-                f"Post-processing: {pp_status}\n"
-                f"Entry: {entry_method}"
-            )
-            tray_icon.show_message("Service Started", startup_msg, details=startup_details)
-
         def on_model_loaded():
             download_toast._anim_timer.stop()
             download_toast._hold_timer.stop()
             download_toast.hide()
             vtt_app.setup_hotkey()
             load_thread.quit()
-            # Show normal startup toast after brief pause
-            QTimer.singleShot(1000, _show_startup_toast)
+
+            # Show startup toast with download confirmation at top
+            pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+            use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
+            entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+
+            startup_msg = (
+                f"Model downloaded, ready to use\n"
+                f"Press {vtt_app.config.get_hotkey_display()} to dictate"
+            )
+            startup_details = (
+                f"Model: {model_label}\n"
+                f"Post-processing: {pp_status}\n"
+                f"Entry: {entry_method}"
+            )
+            tray_icon.show_message("Service Started", startup_msg, details=startup_details)
 
         def on_model_error(msg):
             download_toast._anim_timer.stop()
