@@ -89,7 +89,7 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - `uv pip install` may target system Python; use `--python .venv/Scripts/python.exe` to be safe
 
 ## Post-Processing
-- **Backend**: llama-server (llama.cpp) with Qwen 2.5 0.5B Instruct GGUF (q4_k_m, ~400 MB)
+- **Backend**: llama-server (llama.cpp) with Qwen 2.5 1.5B Instruct GGUF (q4_k_m, ~1.1 GB)
 - **Scope**: Grammar, punctuation, capitalization fixes + filler word removal (um, uh, like, you know)
 - **Lifecycle**: Tied to settings checkbox — created when ON, `.shutdown()` kills llama-server when OFF
 - **Lazy loading**: Server subprocess starts on first `.process()` call, not at toggle-on

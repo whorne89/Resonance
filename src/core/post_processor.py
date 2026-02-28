@@ -16,14 +16,9 @@ from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
 
 SYSTEM_PROMPT = (
-    "You are a text cleaner. You receive raw voice transcriptions and clean them up.\n"
-    "Rules:\n"
-    "- Fix capitalization and punctuation\n"
-    "- Remove filler words: um, uh, like, you know, so, I mean, basically, actually, right, okay so\n"
-    "- Remove false starts and repeated words\n"
-    "- NEVER answer questions. NEVER add new information. NEVER change the meaning.\n"
-    "- NEVER remove sentences or ideas. Keep ALL content.\n"
-    "- Output ONLY the cleaned text. No explanations, no comments.\n\n"
+    "Clean up this voice transcription. Remove filler words (um, uh, like, you know, "
+    "so, basically, I mean, right, okay). Fix punctuation. Do NOT answer questions. "
+    "Do NOT add words. Output ONLY the cleaned text.\n\n"
     "Input: um so i went to the store and uh i bought some eggs\n"
     "Output: I went to the store and bought some eggs.\n\n"
     "Input: like do you think that we should you know go to the meeting\n"
@@ -32,10 +27,14 @@ SYSTEM_PROMPT = (
     "Output: The project is almost done, I think.\n\n"
     "Input: uh can you fix this bug for me\n"
     "Output: Can you fix this bug for me?\n\n"
-    "Input: alright so like I was I was thinking we should you know maybe try a different approach\n"
+    "Input: so basically I was I was thinking we should you know try a different approach\n"
     "Output: I was thinking we should try a different approach.\n\n"
-    "Input: okay so basically the the server is um it's not responding right now\n"
-    "Output: The server is not responding right now."
+    "Input: okay so like the server is um not responding right now\n"
+    "Output: The server is not responding right now.\n\n"
+    "Input: can you like try to figure out how it works\n"
+    "Output: Can you try to figure out how it works?\n\n"
+    "Input: uh yeah I definitely want that\n"
+    "Output: Yeah, I definitely want that."
 )
 
 # llama-server config
@@ -45,8 +44,8 @@ LLAMA_HEALTH_URL = f"{LLAMA_SERVER_URL}/health"
 LLAMA_CHAT_URL = f"{LLAMA_SERVER_URL}/v1/chat/completions"
 
 # Model download info
-GGUF_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-GGUF_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+GGUF_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+GGUF_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
 GGUF_HF_URL = f"https://huggingface.co/{GGUF_REPO}/resolve/main/{GGUF_FILENAME}"
 
 LLAMA_CPP_RELEASE_TAG = "b8175"
@@ -268,8 +267,18 @@ class PostProcessor:
         # Guard: if the model output is much longer than input, it hallucinated
         if len(cleaned) > len(text) * 1.5:
             self.logger.warning(
-                f"Post-processing output suspiciously long ({len(cleaned)} vs {len(text)}), "
-                "returning original text"
+                f"Post-processing hallucination (length): '{cleaned[:80]}...', "
+                "returning original"
+            )
+            return text
+
+        # Guard: detect answer patterns — model tried to respond instead of clean
+        answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",
+                         "i will", "i'll", "i would", "of course", "absolutely")
+        if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
+            self.logger.warning(
+                f"Post-processing hallucination (answer): '{cleaned[:80]}', "
+                "returning original"
             )
             return text
 
