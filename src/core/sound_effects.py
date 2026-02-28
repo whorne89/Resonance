@@ -33,23 +33,20 @@ class SoundEffects:
 
         # Only generate defaults if user hasn't provided custom WAV files
         if not os.path.exists(self._start_path):
-            self._write_wav(self._start_path, self._generate_piano_tone(freq=523))
+            self._write_wav(self._start_path, self._generate_start_chime())
         if not os.path.exists(self._stop_path):
-            self._write_wav(self._stop_path, self._generate_piano_tone(freq=392))
+            self._write_wav(self._stop_path, self._generate_stop_chime())
 
-    def _generate_piano_tone(self, freq, duration=0.6):
-        """Generate a piano-like tone with room reverb.
+    def _generate_single_note(self, freq, duration):
+        """Generate a single piano note (no reverb).
 
         Models piano string physics: sharp hammer attack, harmonics with
-        inharmonicity (upper partials slightly sharp from string stiffness),
-        and per-partial decay rates. Reverb via simulated early reflections.
+        inharmonicity, and per-partial decay rates.
         """
         sr = self.sample_rate
-        n_samples = int(sr * duration)
-        t = np.linspace(0, duration, n_samples, endpoint=False)
+        n = int(sr * duration)
+        t = np.linspace(0, duration, n, endpoint=False)
 
-        # Piano partials: (harmonic_number, amplitude, decay_rate)
-        # Higher harmonics are quieter and decay faster
         inharmonicity = 0.0004
         partials = [
             (1, 1.00, 5),
@@ -60,41 +57,87 @@ class SoundEffects:
             (6, 0.06, 18),
         ]
 
-        tone = np.zeros(n_samples)
-        for n, amp, decay in partials:
-            # Piano inharmonicity: f_n = n * f * sqrt(1 + B*n^2)
-            partial_freq = n * freq * np.sqrt(1 + inharmonicity * n * n)
-            tone += amp * np.sin(2 * np.pi * partial_freq * t) * np.exp(-t * decay)
+        tone = np.zeros(n)
+        for h, amp, decay in partials:
+            f = h * freq * np.sqrt(1 + inharmonicity * h * h)
+            tone += amp * np.sin(2 * np.pi * f * t) * np.exp(-t * decay)
 
         # Sharp attack (3ms) — hammer strike
-        attack_n = int(sr * 0.003)
-        if attack_n > 0:
-            tone[:attack_n] *= np.linspace(0, 1, attack_n)
+        attack = int(sr * 0.003)
+        if attack > 0:
+            tone[:attack] *= np.linspace(0, 1, attack)
 
-        # Normalize before reverb
+        # Normalize to unit peak
         peak = np.max(np.abs(tone))
         if peak > 0:
-            tone = tone / peak
+            tone /= peak
 
-        # Room reverb: early reflections at decreasing amplitude
-        output = tone.copy()
+        return tone
+
+    def _apply_reverb(self, signal):
+        """Apply room reverb via early reflections."""
+        n = len(signal)
+        sr = self.sample_rate
+        output = signal.copy()
+
         reflections = [
-            (0.035, 0.25),   # 35ms — first wall
-            (0.070, 0.18),   # 70ms — opposite wall
-            (0.120, 0.10),   # 120ms — room fill
-            (0.180, 0.06),   # 180ms — reverb tail
+            (0.035, 0.22),   # 35ms — first wall
+            (0.070, 0.15),   # 70ms — opposite wall
+            (0.120, 0.09),   # 120ms — room fill
+            (0.185, 0.05),   # 185ms — reverb tail
         ]
         for delay_s, amp in reflections:
             d = int(sr * delay_s)
-            if d < n_samples:
-                output[d:] += tone[:n_samples - d] * amp
+            if d < n:
+                output[d:] += signal[:n - d] * amp
 
-        # Final normalize and apply volume
+        return output
+
+    def _generate_start_chime(self):
+        """Three ascending piano notes — Xbox guide-style activation chime.
+
+        C4 → E4 → G4 (major triad), each note overlapping the previous
+        as it decays, creating a cascading resonant effect.
+        """
+        sr = self.sample_rate
+        spacing = 0.12     # 120ms between note starts
+        note_dur = 0.45    # each note rings for 450ms
+        total = spacing * 2 + note_dur
+        n_samples = int(sr * total)
+
+        # C4 → E4 → G4 ascending major triad
+        freqs = [261.6, 329.6, 392.0]
+        output = np.zeros(n_samples)
+
+        for i, freq in enumerate(freqs):
+            offset = int(sr * spacing * i)
+            note = self._generate_single_note(freq, note_dur)
+            end = min(offset + len(note), n_samples)
+            output[offset:end] += note[:end - offset]
+
+        # Normalize, apply reverb, then final volume
+        peak = np.max(np.abs(output))
+        if peak > 0:
+            output /= peak
+
+        output = self._apply_reverb(output)
+
         peak = np.max(np.abs(output))
         if peak > 0:
             output = output / peak * self.volume
 
         return output
+
+    def _generate_stop_chime(self):
+        """Single low piano note — warm, resolving stop indicator."""
+        note = self._generate_single_note(freq=261.6, duration=0.5)  # C4
+        note = self._apply_reverb(note)
+
+        peak = np.max(np.abs(note))
+        if peak > 0:
+            note = note / peak * self.volume
+
+        return note
 
     def _write_wav(self, path, tone):
         """Write tone data to a 16-bit mono WAV file."""
