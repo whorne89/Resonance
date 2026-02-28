@@ -17,22 +17,26 @@ from utils.logger import get_logger
 
 SYSTEM_PROMPT = (
     "Clean up this voice transcription. Remove filler words (um, uh, like, you know, "
-    "so, basically, I mean, right, okay). Fix punctuation. Do NOT answer questions. "
-    "Do NOT add words. Output ONLY the cleaned text.\n\n"
+    "so, basically, I mean, right, okay). Fix punctuation and capitalization. "
+    "Remove repeated words and false starts. "
+    "Do NOT answer or respond to the text. Do NOT add new information. "
+    "Output ONLY the cleaned version of the input.\n\n"
     "Input: um so i went to the store and uh i bought some eggs\n"
     "Output: I went to the store and bought some eggs.\n\n"
     "Input: like do you think that we should you know go to the meeting\n"
     "Output: Do you think that we should go to the meeting?\n\n"
     "Input: the the project is uh almost done i think\n"
     "Output: The project is almost done, I think.\n\n"
-    "Input: uh can you fix this bug for me\n"
-    "Output: Can you fix this bug for me?\n\n"
     "Input: so basically I was I was thinking we should you know try a different approach\n"
     "Output: I was thinking we should try a different approach.\n\n"
     "Input: okay so like the server is um not responding right now\n"
     "Output: The server is not responding right now.\n\n"
-    "Input: can you like try to figure out how it works\n"
-    "Output: Can you try to figure out how it works?\n\n"
+    "Input: what do you think about using TypeScript\n"
+    "Output: What do you think about using TypeScript?\n\n"
+    "Input: where did you put the config file\n"
+    "Output: Where did you put the config file?\n\n"
+    "Input: why is the build like failing on the CI server\n"
+    "Output: Why is the build failing on the CI server?\n\n"
     "Input: uh yeah I definitely want that\n"
     "Output: Yeah, I definitely want that."
 )
@@ -274,13 +278,31 @@ class PostProcessor:
 
         # Guard: detect answer patterns — model tried to respond instead of clean
         answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",
-                         "i will", "i'll", "i would", "of course", "absolutely")
+                         "i will", "i'll", "i would", "of course", "absolutely",
+                         "understood", "okay, let", "okay, i", "great,")
         if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
             self.logger.warning(
                 f"Post-processing hallucination (answer): '{cleaned[:80]}', "
                 "returning original"
             )
             return text
+
+        # Guard: input is a question but output changed subject (model answered)
+        question_words = ("what ", "where ", "why ", "how ", "when ", "who ",
+                          "which ", "can ", "could ", "should ", "would ",
+                          "is ", "are ", "do ", "does ", "will ")
+        text_lower = text.lower().lstrip("um uh so like okay basically alright ")
+        if text_lower.startswith(question_words):
+            # Input was a question — output must also be a question (end with ?)
+            # or at least start with the same question word
+            first_word_in = text_lower.split()[0]
+            first_word_out = cleaned.lower().split()[0] if cleaned else ""
+            if first_word_in != first_word_out and not cleaned.endswith("?"):
+                self.logger.warning(
+                    f"Post-processing hallucination (question answered): "
+                    f"'{cleaned[:80]}', returning original"
+                )
+                return text
 
         self.logger.info(f"Post-processing: '{text}' -> '{cleaned}'")
         return cleaned
