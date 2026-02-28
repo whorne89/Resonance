@@ -6,7 +6,7 @@ Main entry point that orchestrates all components.
 import sys
 import ctypes
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
+from PySide6.QtCore import QObject, Signal, QThread, Qt
 
 
 def set_windows_app_id():
@@ -202,6 +202,8 @@ class VTTApplication(QObject):
                 if self.tray_icon:
                     self.tray_icon.show_error("Please wait for previous transcription to finish")
                     self.tray_icon.set_idle_state()
+                if self.overlay:
+                    self.overlay.hide_overlay()
                 return
 
         # Clean up any previous thread
@@ -242,10 +244,6 @@ class VTTApplication(QObject):
 
         # Start thread
         self.transcription_thread.start()
-
-        # Fallback: ensure cleanup happens even if signals fail
-        # Schedule cleanup for 30 seconds after start as safety net
-        QTimer.singleShot(30000, self.force_cleanup_if_stuck)
 
     def on_transcription_complete(self, text):
         """
@@ -312,35 +310,23 @@ class VTTApplication(QObject):
             self.logger.info("Transcription error handler finished, cleanup will occur via signal")
 
     def _quit_transcription_thread(self, _result=None):
-        """Immediately quit and cleanup the transcription thread."""
-        self.logger.info("Quitting transcription thread")
-        if self.transcription_thread:
-            self.transcription_thread.quit()
-            # Use QTimer to cleanup shortly after quit
-            QTimer.singleShot(100, self.cleanup_transcription_thread)
+        """Quit and clean up the transcription thread immediately.
 
-    def cleanup_transcription_thread(self):
-        """Clean up transcription thread resources."""
+        Called via QueuedConnection so it runs on the main thread after
+        the completion/error handlers finish. No timer delay — doing
+        cleanup inline prevents a race where a delayed timer destroys
+        a newly started thread.
+        """
         self.logger.info("Cleaning up transcription thread")
         if self.transcription_thread:
-            if self.transcription_thread.isRunning():
-                self.logger.warning("Thread still running during cleanup, waiting...")
-                self.transcription_thread.wait(2000)
+            self.transcription_thread.quit()
+            self.transcription_thread.wait(2000)
             self.transcription_thread.deleteLater()
             self.transcription_thread = None
         if self.transcription_worker:
             self.transcription_worker.deleteLater()
             self.transcription_worker = None
         self.logger.info("Transcription thread cleanup complete")
-
-    def force_cleanup_if_stuck(self):
-        """Force cleanup if thread is still running after timeout (safety net)."""
-        if self.transcription_thread is not None:
-            if self.transcription_thread.isRunning():
-                self.logger.warning("Transcription thread still running after timeout - forcing cleanup")
-                self.transcription_thread.quit()
-                self.transcription_thread.wait(1000)  # Wait up to 1 second
-            self.cleanup_transcription_thread()
 
     def show_settings(self):
         """Show settings dialog."""
