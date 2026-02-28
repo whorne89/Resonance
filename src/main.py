@@ -562,15 +562,21 @@ def main():
             tray_icon.show_message("Service Started", startup_msg, details=startup_details)
 
         def on_model_loaded():
-            download_toast.set_complete("Complete \u2014 ready to use")
+            download_toast._anim_timer.stop()
+            download_toast._hold_timer.stop()
+            download_toast.hide()
             vtt_app.setup_hotkey()
             load_thread.quit()
-            # Show normal startup toast after download toast dismisses (2s)
-            QTimer.singleShot(2200, _show_startup_toast)
+            # Show normal startup toast after brief pause
+            QTimer.singleShot(1000, _show_startup_toast)
 
         def on_model_error(msg):
-            download_toast.set_complete(f"Download failed: {msg}")
+            download_toast._anim_timer.stop()
+            download_toast._hold_timer.stop()
+            download_toast._message = f"Download failed: {msg}"
+            download_toast.update()
             load_thread.quit()
+            QTimer.singleShot(3000, download_toast.hide)
 
         load_worker.finished.connect(on_model_loaded)
         load_worker.error.connect(on_model_error)
