@@ -4,7 +4,7 @@ Floating pill-shaped widget showing recording/processing state with live wavefor
 """
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, QRect, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont, QFontMetrics, QGuiApplication
 
 
@@ -34,18 +34,23 @@ class RecordingOverlay(QWidget):
     BORDER_COLOR = QColor(45, 45, 78, 128)    # #2d2d4e at 50%
     REC_COLOR = QColor(231, 76, 60)           # #e74c3c red
     PROC_COLOR = QColor(52, 152, 219)         # #3498db blue
+    TYPE_COLOR = QColor(46, 204, 113)         # #2ecc71 green
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         # State
-        self._state = "hidden"  # "hidden", "recording", "processing"
+        self._state = "hidden"  # "hidden", "recording", "processing", "typing"
         self._bar_heights = [0.0] * self.BAR_COUNT
         self._target_heights = [0.0] * self.BAR_COUNT
         self._dot_opacity = 1.0
         self._dot_direction = -1  # -1 = dimming, +1 = brightening
         self._proc_dot_index = 0
         self._proc_tick = 0
+        self._typing_tick = 0
+        self._typing_dot_count = 0  # 0-3 for animated "..."
+        self._typing_text = "Typing"
+        self._typing_show_dots = True
 
         # Audio source (set by caller)
         self._audio_recorder = None
@@ -128,8 +133,36 @@ class RecordingOverlay(QWidget):
         self._proc_tick = 0
         self.update()
 
-    def hide_overlay(self):
-        """Fade out and hide the overlay."""
+    def show_typing(self):
+        """Transition to typing state (char-by-char output with animated dots)."""
+        self._state = "typing"
+        self._typing_text = "Typing"
+        self._typing_show_dots = True
+        self._typing_tick = 0
+        self.update()
+
+    def show_pasted(self):
+        """Transition to pasted state (clipboard output)."""
+        self._state = "typing"
+        self._typing_text = "Text Entered"
+        self._typing_show_dots = False
+        self.update()
+
+    def show_complete(self):
+        """Show 'Complete' after typing finishes."""
+        self._typing_text = "Complete"
+        self._typing_show_dots = False
+        self.update()
+
+    def hide_overlay(self, delay_ms=0):
+        """Fade out and hide the overlay after an optional delay."""
+        if delay_ms > 0:
+            QTimer.singleShot(delay_ms, self._begin_hide)
+        else:
+            self._begin_hide()
+
+    def _begin_hide(self):
+        """Stop animations and fade out."""
         self._timer.stop()
         self._state = "hidden"
         self._fade_out()
@@ -145,6 +178,10 @@ class RecordingOverlay(QWidget):
             self._proc_tick += 1
             if self._proc_tick % 4 == 0:  # Every ~200ms
                 self._proc_dot_index = (self._proc_dot_index + 1) % 3
+        elif self._state == "typing":
+            self._typing_tick += 1
+            if self._typing_tick % 6 == 0:  # Every ~300ms — cycle dots
+                self._typing_dot_count = (self._typing_dot_count + 1) % 4
         self.update()
 
     def _update_waveform(self):
@@ -203,8 +240,8 @@ class RecordingOverlay(QWidget):
         # Offset: pill is drawn at the bottom of the widget
         pill_y = self._total_height() - self.PILL_HEIGHT
 
-        # Draw feature badge(s) above the pill
-        if self._features:
+        # Draw feature badge(s) above the pill (hide during green states)
+        if self._features and self._state != "typing":
             self._paint_badge(painter)
 
         # Draw pill background
@@ -226,6 +263,8 @@ class RecordingOverlay(QWidget):
             self._paint_recording(painter)
         elif self._state == "processing":
             self._paint_processing(painter)
+        elif self._state == "typing":
+            self._paint_typing(painter)
 
         painter.restore()
         painter.end()
@@ -301,3 +340,29 @@ class RecordingOverlay(QWidget):
             painter.setBrush(QBrush(color))
             radius = 5 if is_active else 4
             painter.drawEllipse(x - radius, center_y - radius, radius * 2, radius * 2)
+
+    def _paint_typing(self, painter):
+        """Draw typing/pasted/complete indicator in green."""
+        font = QFont()
+        font.setPixelSize(13)
+        painter.setFont(font)
+        painter.setPen(self.TYPE_COLOR)
+
+        text = self._typing_text
+        if self._typing_show_dots:
+            text += "." * self._typing_dot_count
+
+        fm = QFontMetrics(font)
+        # Reserve space for max dots so text doesn't shift
+        if self._typing_show_dots:
+            max_w = fm.horizontalAdvance(self._typing_text + "...")
+        else:
+            max_w = fm.horizontalAdvance(text)
+
+        start_x = (self.PILL_WIDTH - max_w) // 2
+
+        painter.drawText(
+            QRect(start_x, 0, max_w, self.PILL_HEIGHT),
+            Qt.AlignmentFlag.AlignVCenter,
+            text,
+        )

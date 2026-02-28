@@ -97,6 +97,7 @@ class VTTApplication(QObject):
             typing_speed=self.config.get_typing_speed(),
             use_clipboard=self.config.get("typing", "use_clipboard_fallback", default=False)
         )
+        self.keyboard_typer.on_tick = lambda: QApplication.processEvents()
         self.hotkey_manager = HotkeyManager()
         self.dictionary = DictionaryProcessor(self.config, self.logger)
         self.sound_effects = SoundEffects()
@@ -289,15 +290,21 @@ class VTTApplication(QObject):
             if text:
                 try:
                     self.logger.info("Starting text output...")
+                    # Show typing state on overlay for char-by-char mode
+                    if not self.keyboard_typer.use_clipboard and self.overlay:
+                        self.overlay.show_typing()
+                        QApplication.processEvents()  # Repaint before blocking type loop
                     # Run typing with error handling
                     success = self.keyboard_typer.type_text(text)
                     if success:
                         self.logger.info("Text output successful")
-                        if self.clipboard_toast:
+                        # Show green completion state on overlay
+                        if self.overlay:
                             if self.keyboard_typer.use_clipboard:
-                                self.clipboard_toast.show_toast("Text entered")
+                                self.overlay.show_pasted()
                             else:
-                                self.clipboard_toast.show_toast("Typing")
+                                self.overlay.show_complete()
+                            QApplication.processEvents()
                     else:
                         self.logger.warning("Text output failed")
                 except Exception as e:
@@ -308,10 +315,11 @@ class VTTApplication(QObject):
                 self.logger.warning("Transcription returned empty text")
 
             # Reset UI
-            if self.overlay:
-                self.overlay.hide_overlay()
             if self.tray_icon:
                 self.tray_icon.set_idle_state()
+            if self.overlay:
+                # Brief hold on green state before fading out
+                self.overlay.hide_overlay(delay_ms=600 if text else 0)
         finally:
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")

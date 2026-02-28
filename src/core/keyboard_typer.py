@@ -24,6 +24,7 @@ class KeyboardTyper:
         self.controller = Controller()
         self.typing_speed = typing_speed
         self.use_clipboard = use_clipboard
+        self.on_tick = None  # Optional callback called during char-by-char typing
         self.logger = get_logger()
 
     def set_typing_speed(self, speed):
@@ -62,10 +63,12 @@ class KeyboardTyper:
 
             self.logger.info("Starting character-by-character typing...")
             # Type each character with delay
-            for char in text:
+            for i, char in enumerate(text):
                 self.controller.type(char)
                 if self.typing_speed > 0:
                     time.sleep(self.typing_speed)
+                if self.on_tick and i % 5 == 0:
+                    self.on_tick()
 
             self.logger.info("Character typing completed successfully")
             return True

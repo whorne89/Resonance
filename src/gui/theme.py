@@ -67,6 +67,19 @@ QPushButton:disabled {{
     background-color: {BG_PRIMARY};
     border-color: {BORDER};
 }}
+QPushButton#_rdClose {{
+    background: transparent;
+    color: rgba(255, 255, 255, 180);
+    border: none;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0px;
+}}
+QPushButton#_rdClose:hover {{
+    background-color: #e74c3c;
+    color: white;
+}}
 
 /* ── Combo boxes ──────────────────────────────────── */
 QComboBox {{
@@ -298,6 +311,13 @@ class RoundedDialog(QDialog):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+        # Close button in title bar
+        self._close_btn = QPushButton("\u00d7", self)  # × (multiplication sign)
+        self._close_btn.setObjectName("_rdClose")
+        self._close_btn.setFixedSize(28, 28)
+        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_btn.clicked.connect(self.reject)
+
     # ── Layout override ──────────────────────────────────────────────
 
     def setLayout(self, layout):
@@ -353,6 +373,12 @@ class RoundedDialog(QDialog):
             self.CORNER_RADIUS, self.CORNER_RADIUS,
         )
         self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+
+        # Keep close button in top-right of title bar
+        self._close_btn.move(
+            self.width() - self._close_btn.width() - 8,
+            (self.TITLE_BAR_HEIGHT - self._close_btn.height()) // 2,
+        )
 
     def showEvent(self, event):
         super().showEvent(event)
