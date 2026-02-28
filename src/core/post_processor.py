@@ -16,15 +16,26 @@ from utils.resource_path import get_app_data_path
 from utils.logger import get_logger
 
 SYSTEM_PROMPT = (
-    "You clean up voice-to-text transcriptions. Fix grammar, punctuation, "
-    "and capitalization. Remove filler words (um, uh, like, you know). "
-    "Output ONLY the corrected text, nothing else.\n\n"
+    "You are a text cleaner. You receive raw voice transcriptions and clean them up.\n"
+    "Rules:\n"
+    "- Fix capitalization and punctuation\n"
+    "- Remove filler words: um, uh, like, you know, so, I mean, basically, actually, right, okay so\n"
+    "- Remove false starts and repeated words\n"
+    "- NEVER answer questions. NEVER add new information. NEVER change the meaning.\n"
+    "- NEVER remove sentences or ideas. Keep ALL content.\n"
+    "- Output ONLY the cleaned text. No explanations, no comments.\n\n"
     "Input: um so i went to the store and uh i bought some eggs\n"
     "Output: I went to the store and bought some eggs.\n\n"
     "Input: like do you think that we should you know go to the meeting\n"
     "Output: Do you think that we should go to the meeting?\n\n"
     "Input: the the project is uh almost done i think\n"
-    "Output: The project is almost done, I think."
+    "Output: The project is almost done, I think.\n\n"
+    "Input: uh can you fix this bug for me\n"
+    "Output: Can you fix this bug for me?\n\n"
+    "Input: alright so like I was I was thinking we should you know maybe try a different approach\n"
+    "Output: I was thinking we should try a different approach.\n\n"
+    "Input: okay so basically the the server is um it's not responding right now\n"
+    "Output: The server is not responding right now."
 )
 
 # llama-server config
@@ -186,7 +197,7 @@ class PostProcessor:
             os.path.abspath(exe_path),
             "--model", os.path.abspath(model_path),
             "--port", str(LLAMA_SERVER_PORT),
-            "--ctx-size", "512",
+            "--ctx-size", "2048",
             "--threads", "4",
         ]
 
@@ -237,8 +248,8 @@ class PostProcessor:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
-            "temperature": 0.1,
-            "max_tokens": 256,
+            "temperature": 0.0,
+            "max_tokens": 512,
         }).encode("utf-8")
 
         req = urllib.request.Request(
@@ -252,7 +263,18 @@ class PostProcessor:
             result = json.loads(resp.read().decode("utf-8"))
 
         content = result["choices"][0]["message"]["content"]
-        return content.strip()
+        cleaned = content.strip()
+
+        # Guard: if the model output is much longer than input, it hallucinated
+        if len(cleaned) > len(text) * 1.5:
+            self.logger.warning(
+                f"Post-processing output suspiciously long ({len(cleaned)} vs {len(text)}), "
+                "returning original text"
+            )
+            return text
+
+        self.logger.info(f"Post-processing: '{text}' -> '{cleaned}'")
+        return cleaned
 
     def _download_file(self, url, dest_path, progress_callback=None):
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
