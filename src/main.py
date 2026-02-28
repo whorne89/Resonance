@@ -547,14 +547,8 @@ def main():
         load_worker.moveToThread(load_thread)
         load_thread.started.connect(load_worker.run)
 
-        def on_model_loaded():
-            download_toast._anim_timer.stop()
-            download_toast._hold_timer.stop()
-            download_toast.hide()
-            vtt_app.setup_hotkey()
-            load_thread.quit()
-
-            # Show startup toast with download confirmation at top
+        def _show_post_download_toast():
+            """Show startup toast after model download completes."""
             pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
             use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
             entry_method = "Clipboard" if use_clipboard else "Character-by-character"
@@ -569,6 +563,15 @@ def main():
                 f"Entry: {entry_method}"
             )
             tray_icon.show_message("Service Started", startup_msg, details=startup_details)
+
+        def on_model_loaded():
+            download_toast._anim_timer.stop()
+            download_toast._hold_timer.stop()
+            download_toast.hide()
+            vtt_app.setup_hotkey()
+            load_thread.quit()
+            # Delay so the event loop processes the hide before showing the new toast
+            QTimer.singleShot(500, _show_post_download_toast)
 
         def on_model_error(msg):
             download_toast._anim_timer.stop()
