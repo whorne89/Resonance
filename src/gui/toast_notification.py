@@ -431,7 +431,8 @@ class ClipboardToast(QWidget):
         painter.drawPath(path)
 
         font = QFont("Calibri", 0)
-        font.setPixelSize(12)
+        font.setPixelSize(16)
+        font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(self.TEXT_COLOR)
         painter.drawText(
