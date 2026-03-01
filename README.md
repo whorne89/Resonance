@@ -27,22 +27,12 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 
 ## Installation
 
-### Option 1: Run from Source (Recommended)
-
 1. Clone or download this repository
 2. **Install uv** (if not already installed):
    ```powershell
    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
 3. **Run the application:** Double-click `START RESONANCE.bat`
-
-### Option 2: Build Executable
-
-1. Clone or download this repository
-2. Install `uv` (see step 2 above)
-3. Double-click `BUILD RESONANCE.bat`
-4. The executable will be created at `dist\Resonance\Resonance.exe`
-5. Copy the entire `dist\Resonance` folder anywhere - no installation needed!
 
 ## Usage
 
@@ -107,9 +97,9 @@ Make sure `uv` is installed (see Installation step 2) and restart your terminal/
 
 ### OneDrive/Cloud Sync Error
 
-The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
+The startup batch file uses a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
 
-**Solution:** Edit the batch files and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
+**Solution:** Edit `START RESONANCE.bat` and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
 
 ### No transcription output
 
