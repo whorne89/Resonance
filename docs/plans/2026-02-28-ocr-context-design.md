@@ -213,9 +213,9 @@ CHAT_SYSTEM_PROMPT = (
     "ONLY do these things:\n"
     "1. Remove um, uh, and stuttered repeated words\n"
     "2. Fix obvious typos and grammar only if clearly wrong\n"
-    "3. Add minimal punctuation — no periods at the end of single sentences\n"
-    "DO NOT make the text formal or add unnecessary punctuation.\n"
-    "DO NOT remove slang, contractions, or casual phrasing.\n"
+    "NEVER add a period at the end. Chat messages do not end with periods.\n"
+    "DO NOT make the text formal or change casual wording.\n"
+    "DO NOT change phrases like 'or no', 'yeah', 'nah', 'lol' — keep them exactly.\n"
     "DO NOT respond to the text or answer questions.\n"
     "Output ONLY the cleaned text.\n\n"
     "Input: um yeah i'll be there in like 10 minutes\n"
@@ -223,7 +223,7 @@ CHAT_SYSTEM_PROMPT = (
     "Input: hey uh can you send me that that file real quick\n"
     "Output: Hey can you send me that file real quick\n\n"
     "Input: lol yeah that's that's exactly what i was thinking\n"
-    "Output: Lol yeah that's exactly what I was thinking\n\n"
+    "Output: lol yeah that's exactly what I was thinking\n\n"
     "Input: sounds good uh let me know when you're free\n"
     "Output: Sounds good let me know when you're free\n\n"
     "Input: wait did you see what what sarah posted in the channel\n"
@@ -232,6 +232,10 @@ CHAT_SYSTEM_PROMPT = (
     "Output: Nah I think we should just go with the first option honestly\n\n"
     "Input: ok cool i'll uh i'll check it out later\n"
     "Output: Ok cool I'll check it out later\n\n"
+    "Input: are you coming tonight or no\n"
+    "Output: Are you coming tonight or no\n\n"
+    "Input: yeah so i finished it and sent it to the team already\n"
+    "Output: Yeah so I finished it and sent it to the team already\n\n"
     "Input: do you think um do you think that works\n"
     "Output: Do you think that works"
 )
@@ -495,3 +499,33 @@ This gives Qwen a spelling reference without asking it to do complex reasoning.
 | `mss` | ~24 KB | Screenshot capture |
 
 Total added weight: ~10 MB. No external binaries. No model downloads.
+
+---
+
+## Prompt Testing Results (Qwen 2.5 1.5B q4_k_m, live llama-server)
+
+Tested 18 scenarios across all 5 app types. Results:
+
+### Summary: 11/18 exact match, 7 acceptable diffs
+
+All diffs are either (a) minor stylistic variations that are grammatically correct, or (b) the CHAT trailing period issue handled by Python post-processing.
+
+### CHAT findings
+- **Trailing periods**: Qwen 1.5B has a strong punctuation bias and adds trailing periods even when instructed not to. Prompt reinforcement does not fix this. **Solution**: Python `apply_chat_formatting()` strips trailing periods deterministically after LLM processing.
+- **Casual language preserved**: "or no", "lol", "nah" all preserved correctly after prompt refinement.
+- **Name capitalization**: Works when names are in the noun hints. Acronyms like "PR" are not capitalized unless in hints.
+
+### EMAIL findings
+- **Excellent accuracy**: 3/4 exact match. One diff was splitting a long sentence into two — grammatically valid alternative.
+- **Name spelling**: "Sarah Chen" correctly capitalized from noun hints.
+- **Day capitalization**: "friday" → "Friday" handled correctly.
+
+### CODE findings
+- **Technical terms preserved**: getUserHandler, ApiController, .env file all handled correctly with noun hints.
+- **One diff**: "docker-compose" → "Docker Compose" — both are valid naming conventions.
+
+### DOCUMENT findings
+- **Good accuracy**: 1/3 exact match. Diffs are stylistic: model uses two sentences where we expected a comma, or colon/semicolons instead of period-separated list items. All outputs are grammatically correct and well-structured.
+
+### KEY DESIGN DECISION
+The CHAT trailing period issue confirms that **Python post-processing is essential for CHAT mode**. The `apply_chat_formatting()` function in the design handles this reliably. The LLM does what it's good at (cleanup, filler removal, name capitalization), and Python handles what it can't (structural formatting rules like "no trailing period").
