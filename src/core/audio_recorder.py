@@ -44,13 +44,48 @@ class AudioRecorder:
         """
         Get list of available audio input devices.
 
+        Filters to Windows WASAPI devices only (avoids showing the same
+        physical device 3-4 times via MME, DirectSound, WDM-KS).
+        Falls back to all input devices if WASAPI isn't available.
+
         Returns:
             List of (index, name) tuples for input devices
         """
+        # Find WASAPI host API index
+        wasapi_idx = None
+        try:
+            for i, api in enumerate(sd.query_hostapis()):
+                if "WASAPI" in api.get("name", ""):
+                    wasapi_idx = i
+                    break
+        except Exception:
+            pass
+
         devices = []
+        seen_names = set()
         for i, device in enumerate(sd.query_devices()):
-            if device['max_input_channels'] > 0:
-                devices.append((i, device['name']))
+            if device['max_input_channels'] <= 0:
+                continue
+            # Filter to WASAPI if available
+            if wasapi_idx is not None and device.get('hostapi') != wasapi_idx:
+                continue
+            # Deduplicate by name
+            name = device['name']
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            devices.append((i, name))
+
+        # Fallback: if WASAPI filter returned nothing, show all input devices
+        if not devices:
+            seen_names.clear()
+            for i, device in enumerate(sd.query_devices()):
+                if device['max_input_channels'] > 0:
+                    name = device['name']
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        devices.append((i, name))
+
         return devices
 
     def start_recording(self):

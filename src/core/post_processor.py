@@ -113,7 +113,7 @@ class PostProcessor:
         "yeah", "hmm", "ah", "oh",
     })
 
-    def process(self, raw_text):
+    def process(self, raw_text, system_prompt=None):
         """
         Process transcribed text to fix grammar, punctuation, and filler words.
 
@@ -139,7 +139,7 @@ class PostProcessor:
                 return raw_text
 
         try:
-            return self._process_via_api(raw_text)
+            return self._process_via_api(raw_text, system_prompt=system_prompt)
         except Exception as e:
             self.logger.error(f"Post-processing failed: {e}", exc_info=True)
             return raw_text
@@ -266,11 +266,11 @@ class PostProcessor:
                     pass
             self._server_process = None
 
-    def _process_via_api(self, text):
+    def _process_via_api(self, text, system_prompt=None):
         payload = json.dumps({
             "model": "qwen2.5",
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
             "temperature": 0.0,
@@ -303,7 +303,8 @@ class PostProcessor:
                          "i will", "i'll", "i would", "of course", "absolutely",
                          "understood", "okay, let", "okay, i", "great,",
                          "you're welcome", "you are welcome", "thank you!",
-                         "certainly", "i understand")
+                         "certainly", "i understand", "i'm sorry", "i apologize",
+                         "i use ", "i don't have", "as an ai")
         if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
             self.logger.warning(
                 f"Post-processing hallucination (answer): '{cleaned[:80]}', "
@@ -335,6 +336,16 @@ class PostProcessor:
                     f"'{cleaned[:80]}', returning original"
                 )
                 return text
+
+        # Guard: comma spam — if output has more commas than words/3, model glitched
+        out_words = cleaned.split()
+        comma_count = cleaned.count(",")
+        if len(out_words) > 3 and comma_count > len(out_words) / 3:
+            self.logger.warning(
+                f"Post-processing comma spam ({comma_count} commas in "
+                f"{len(out_words)} words): '{cleaned[:80]}', returning original"
+            )
+            return text
 
         self.logger.info(f"Post-processing: '{text}' -> '{cleaned}'")
         return cleaned

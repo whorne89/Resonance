@@ -60,6 +60,10 @@ class RecordingOverlay(QWidget):
         # Feature badges (e.g. ["Post-processing", "OCR"])
         self._features = []
 
+        # Accuracy badge (shown during typing/pasted state)
+        self._accuracy = None  # 0.0-1.0 or None
+        self._detected_app = None  # e.g. "chat", "email", "code"
+
         # Window setup
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -92,9 +96,38 @@ class RecordingOverlay(QWidget):
         """
         self._features = list(features)
 
+    def set_accuracy(self, confidence):
+        """Set transcription accuracy for badge display during typing state.
+
+        Args:
+            confidence: 0.0-1.0 confidence score, or None to hide.
+        """
+        self._accuracy = confidence
+
+    def set_detected_app(self, app_type):
+        """Set the detected app type for badge display during typing state.
+
+        Args:
+            app_type: App type string (e.g. "chat", "email") or None to hide.
+        """
+        self._detected_app = app_type
+
+    def _active_badges(self):
+        """Return the list of badge labels for the current state."""
+        if self._state == "typing":
+            badges = []
+            if self._detected_app and self._detected_app != "general":
+                badges.append(self._detected_app.capitalize())
+            if self._accuracy is not None:
+                badges.append(f"Estimated Accuracy: {self._accuracy:.0%}")
+            return badges
+        if self._features:
+            return self._features
+        return []
+
     def _total_height(self):
-        """Total widget height including badge area if features are active."""
-        n = len(self._features)
+        """Total widget height including badge area if badges are active."""
+        n = len(self._active_badges())
         if n:
             badges = n * self.BADGE_HEIGHT + (n - 1) * self.BADGE_SPACING + self.BADGE_GAP
             return self.PILL_HEIGHT + badges
@@ -142,6 +175,7 @@ class RecordingOverlay(QWidget):
         self._typing_show_dots = True
         self._typing_color = self.TYPE_COLOR
         self._typing_tick = 0
+        self._position_on_screen()
         self.update()
 
     def show_pasted(self):
@@ -150,6 +184,7 @@ class RecordingOverlay(QWidget):
         self._typing_text = "Text Entered"
         self._typing_show_dots = False
         self._typing_color = self.TYPE_COLOR
+        self._position_on_screen()
         self.update()
 
     def show_complete(self):
@@ -253,8 +288,8 @@ class RecordingOverlay(QWidget):
         # Offset: pill is drawn at the bottom of the widget
         pill_y = self._total_height() - self.PILL_HEIGHT
 
-        # Draw feature badge(s) above the pill (hide during green states)
-        if self._features and self._state != "typing":
+        # Draw badge(s) above the pill (features during recording, accuracy during typing)
+        if self._active_badges():
             self._paint_badge(painter)
 
         # Draw pill background
@@ -289,7 +324,7 @@ class RecordingOverlay(QWidget):
         fm = QFontMetrics(font)
         painter.setFont(font)
 
-        for i, label in enumerate(self._features):
+        for i, label in enumerate(self._active_badges()):
             y = i * (self.BADGE_HEIGHT + self.BADGE_SPACING)
             text_width = fm.horizontalAdvance(label)
             badge_w = int(text_width + 18)
@@ -357,7 +392,8 @@ class RecordingOverlay(QWidget):
     def _paint_typing(self, painter):
         """Draw typing/pasted/complete/error indicator."""
         font = QFont()
-        font.setPixelSize(13)
+        font.setPixelSize(18)
+        font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(self._typing_color)
 

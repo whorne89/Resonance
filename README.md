@@ -9,8 +9,11 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 - **Local processing**: Uses Whisper AI running locally on your computer (no cloud, no API costs)
 - **Fast transcription**: Uses faster-whisper (4x faster than standard Whisper)
 - **AI post-processing**: Optional cleanup using a local Qwen 2.5 language model — fixes grammar, capitalization, punctuation, contractions, quotations, and sentence breaks; removes filler words (um, uh) and stutters
+- **On-Screen Recognition (OSR)**: Captures the active window via OCR to improve name accuracy and adapt formatting for chat, email, code, terminal, and documents
+- **Self-learning recognition**: Passively builds per-app profiles over time — learns vocabulary, communication style, and app types so transcription accuracy improves the more you use it
+- **Estimated accuracy**: Displays Whisper's confidence score on each transcription with detected app context
 - **Custom dictionary**: Post-transcription word replacement with exact and fuzzy matching
-- **Recording overlay**: Floating pill widget with live waveform visualization and feature badges
+- **Recording overlay**: Floating pill widget with live waveform visualization, feature badges, and app detection
 - **Sound effects**: Audible start/stop tones with custom sound support
 - **Simple interface**: Dark-themed system tray application with toast notifications
 - **Configurable**: Customize hotkey, model size, audio device, and typing method
@@ -24,22 +27,12 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 
 ## Installation
 
-### Option 1: Run from Source (Recommended)
-
 1. Clone or download this repository
 2. **Install uv** (if not already installed):
    ```powershell
    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
 3. **Run the application:** Double-click `START RESONANCE.bat`
-
-### Option 2: Build Executable
-
-1. Clone or download this repository
-2. Install `uv` (see step 2 above)
-3. Double-click `BUILD RESONANCE.bat`
-4. The executable will be created at `dist\Resonance\Resonance.exe`
-5. Copy the entire `dist\Resonance` folder anywhere - no installation needed!
 
 ## Usage
 
@@ -62,10 +55,13 @@ Right-click the system tray icon and select **Settings** to configure:
   - **Accurate**: Whisper Small (~500 MB), ~2s
   - **Precision**: Whisper Medium (~1.5 GB), ~5s
 - **Post-Processing (AI)**: Enable/disable AI-powered transcription cleanup using Qwen 2.5 1.5B (downloaded automatically, runs locally via llama.cpp)
-- **Audio Device**: Select which microphone to use
+- **On-Screen Recognition (OSR)**: Enable OCR-based screen capture for app-aware formatting and name accuracy (requires Post-Processing)
+- **Self-Learning Recognition**: Enable persistent per-app learning that improves over time (requires OSR)
+- **Audio Device**: Select which microphone to use (WASAPI devices only for clean device list)
 - **Entry Method**: Choose between clipboard paste or character-by-character typing
 - **Custom Dictionary**: Add word replacements applied after transcription
 - **Usage Statistics**: Track words dictated, transcriptions, time saved, and more
+- **Learning Statistics**: Apps learned, words learned, top app, and average confidence
 - **Bug Report**: Submit a pre-filled GitHub issue with system info and recent logs directly from Settings
 
 ## Technical Details
@@ -78,6 +74,8 @@ Right-click the system tray icon and select **Settings** to configure:
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
+- **winocr**: Windows native OCR for screen context capture
+- **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation
 - **pyperclip**: Clipboard-based text entry
 
@@ -85,10 +83,11 @@ Right-click the system tray icon and select **Settings** to configure:
 
 1. Global hotkey listener detects when you press/release the configured hotkey
 2. Audio is recorded from your microphone at 16kHz (Whisper's native sample rate)
-3. When you release the hotkey, the audio is sent to faster-whisper for transcription
-4. If post-processing is enabled, the text is cleaned up by Qwen 2.5 via a local llama-server instance (fixes grammar, punctuation, filler words, stutters)
-5. Custom dictionary replacements are applied
-6. Text is typed into the currently focused window via clipboard paste or keyboard simulation
+3. If OSR is enabled, OCR captures the active window in a background thread during recording (~56ms). If self-learning is also enabled, the captured data updates per-app vocabulary and style profiles
+4. When you release the hotkey, the audio is sent to faster-whisper for transcription (OCR-detected names are passed as vocabulary hints)
+5. If post-processing is enabled, the text is cleaned up by Qwen 2.5 via a local llama-server instance with an app-type-specific prompt (chat, email, code, terminal, or document)
+6. Custom dictionary replacements are applied
+7. Text is typed into the currently focused window via clipboard paste or keyboard simulation
 
 ## Troubleshooting
 
@@ -98,9 +97,9 @@ Make sure `uv` is installed (see Installation step 2) and restart your terminal/
 
 ### OneDrive/Cloud Sync Error
 
-The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
+The startup batch file uses a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
 
-**Solution:** Edit the batch files and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
+**Solution:** Edit `START RESONANCE.bat` and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
 
 ### No transcription output
 
@@ -132,10 +131,23 @@ MIT License
 
 - **In-app updater** — Check GitHub for new versions from Settings. Source installs update via `git pull` + `uv sync`; future exe builds will download from GitHub Releases. Version check logic is shared between both.
 - **Light / Dark / System theme** — Toggle between light mode, dark mode, or follow the system setting. Each can be selected independently in Settings.
-- **On-screen recognition (OCR)** — Capture and read text from the screen or a selected region.
+- ~~**On-screen recognition (OCR)**~~ — Shipped in v3.0.0.
+- ~~**Self-learning recognition**~~ — Shipped in v3.0.0.
 - **macOS support** — Single Python codebase for Windows and Mac with platform-specific abstractions for sound, hotkeys, and typing.
 
 ## Changelog
+
+### v3.0.0
+- **On-Screen Recognition (OSR)**: OCR captures the active window during recording to extract proper nouns as Whisper vocabulary hints and detect app type (chat, email, code, terminal, document) for format-specific post-processing prompts
+- **Self-learning recognition**: Passively builds per-app profiles over time — learns vocabulary, communication style (message length, capitalization, punctuation, formality), and app types with increasing confidence. Profiles persist across sessions in a separate JSON store
+- **App detection badges**: During typing, shows detected app context above the transcription pill — generic type ("Chat", "Email") with OSR only, specific app name ("Discord", "Outlook") with self-learning enabled. Hidden for general/unknown apps
+- **Estimated accuracy badge**: Displays Whisper's confidence score (derived from avg_logprob) on every transcription
+- **Terminal app type**: Discriminates terminals from code editors with dedicated formatting prompt
+- **WASAPI audio filtering**: Microphone dropdown shows only WASAPI devices, eliminating duplicate entries from MME/DirectSound/WDM-KS
+- **Dependency-chained settings**: Post-Processing → OSR → Self-Learning toggles with grayed-out labels showing requirements
+- **Learning statistics**: Four stat cards in settings — Apps Learned, Words Learned, Top App, Avg Confidence
+- **Comma-spam guard**: Post-processor rejects output with excessive comma insertion
+- **Larger typing indicator**: "Text Entered" and "Typing" pill enlarged with bigger text for better visibility
 
 ### v2.2.1
 - **Bug report button**: Settings dialog includes a "Report Bug..." button that opens a pre-filled GitHub issue with system info and recent logs

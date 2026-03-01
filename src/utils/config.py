@@ -79,6 +79,9 @@ class ConfigManager:
             "fuzzy_enabled": True,
             "fuzzy_threshold": 0.75
         },
+        "learning": {
+            "enabled": True
+        },
         "statistics": {
             "total_words": 0,
             "total_transcriptions": 0,
@@ -296,6 +299,22 @@ class ConfigManager:
     def set_post_processing_enabled(self, enabled):
         """Set whether post-processing is enabled."""
         self.set("post_processing", "enabled", value=enabled)
+
+    def get_ocr_enabled(self):
+        """Get whether OCR screen context is enabled."""
+        return self.get("ocr", "enabled", default=False)
+
+    def set_ocr_enabled(self, enabled):
+        """Set whether OCR screen context is enabled."""
+        self.set("ocr", "enabled", value=enabled)
+
+    def get_learning_enabled(self):
+        """Get whether passive learning is enabled."""
+        return self.get("learning", "enabled", default=True)
+
+    def set_learning_enabled(self, enabled):
+        """Set whether passive learning is enabled."""
+        self.set("learning", "enabled", value=enabled)
 
     def get_statistics(self):
         """Get the statistics dict."""

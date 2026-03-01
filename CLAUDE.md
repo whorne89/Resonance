@@ -8,6 +8,7 @@ Resonance is a Windows voice-to-text desktop application that uses Whisper (via 
 - **GUI**: PySide6 (Qt for Python)
 - **Audio**: sounddevice (recording), winsound (notification tones)
 - **Transcription**: faster-whisper (CTranslate2 backend, CPU only)
+- **OCR**: winocr (Windows native OCR), mss (screenshot capture)
 - **Hotkeys**: pynput
 - **Typing output**: pynput keyboard + pyperclip
 - **Threading**: QThread for async transcription
@@ -24,6 +25,8 @@ src/
     hotkey_manager.py        - Global hotkey registration (pynput)
     dictionary.py            - Post-transcription word replacement (exact + fuzzy)
     post_processor.py        - LLM post-processing via llama-server (grammar/punctuation/filler cleanup)
+    screen_context.py        - OCR screen capture, app-type detection, name extraction
+    learning_engine.py       - Self-learning per-app profiles (vocabulary, style metrics)
     sound_effects.py         - Notification tones via winsound (WAV files)
   gui/
     system_tray.py           - System tray icon with context menu
@@ -47,14 +50,15 @@ src/
 - **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
-- **Single source of truth**: `version` field in `pyproject.toml` (currently 2.2.1)
+- **Single source of truth**: `version` field in `pyproject.toml` (currently 3.0.0)
 - About dialog reads via `importlib.metadata.version('resonance')` — never hardcode version strings
 - Package must be installed in editable mode (`uv pip install -e .`) for importlib.metadata to work
 
 ## Transcription Flow
 1. User holds hotkey → start tone plays → AudioRecorder captures audio → overlay shows recording state
+1a. If OCR enabled, ScreenContextEngine.capture() fires in background thread (~56ms) — captures window, runs OCR, detects app type, extracts proper nouns. If self-learning is also enabled, LearningEngine.learn_from_context() updates per-app profiles with vocabulary and style metrics
 2. User releases hotkey → stop tone plays → audio sent to TranscriptionWorker (QThread) → overlay shows processing state
-3. Worker calls Transcriber.transcribe() → PostProcessor.process() (if enabled) → returns text
+3. Worker calls Transcriber.transcribe(initial_prompt=ocr_names) → PostProcessor.process(system_prompt=app_type_prompt) (if enabled) → structural formatting (chat/email) → returns text
 4. VTTApplication.on_transcription_complete() applies dictionary replacements via DictionaryProcessor
 5. KeyboardTyper.type_text() outputs to active window → overlay fades out
 
@@ -92,18 +96,43 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - **Backend**: llama-server (llama.cpp) with Qwen 2.5 1.5B Instruct GGUF (q4_k_m, ~1.1 GB)
 - **Scope**: Grammar, capitalization, punctuation (periods, commas, question marks, quotation marks), contractions, sentence breaks, filler word removal (um, uh), and stutter/repeat cleanup
 - **Prompt philosophy**: Conservative — keep every word the speaker said, only fix formatting. Do NOT summarize, shorten, or rephrase. Three explicit rules: (1) remove um/uh/stutters, (2) fix capitalization + punctuation, (3) fix grammar.
-- **Hallucination guards**: Four-layer system in `_process_via_api()`: (1) filler-only input returns empty, (2) length guard rejects output >1.5x input, (3) answer-pattern guard, (4) question-answer guard
+- **Hallucination guards**: Five-layer system in `_process_via_api()`: (1) filler-only input returns empty, (2) length guard rejects output >1.5x input, (3) answer-pattern guard, (4) question-answer guard, (5) comma-spam guard (rejects output with >words/3 commas)
 - **Lifecycle**: Tied to settings checkbox — created when ON, `.shutdown()` kills llama-server when OFF
 - **Lazy loading**: Server subprocess starts on first `.process()` call, not at toggle-on
 - **Pipeline**: Whisper → PostProcessor.process() → DictionaryProcessor.apply() → KeyboardTyper
 - **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
 
-## UI Components (v2.1)
+## Screen Context (OCR)
+- **Backend**: winocr (Windows native OCR engine), mss (screenshot capture)
+- **Scope**: Captures active window text on hotkey press to (1) extract proper nouns for Whisper vocabulary hints via `initial_prompt`, (2) detect app type (CHAT, EMAIL, CODE, DOCUMENT, GENERAL) for format-specific post-processing prompts
+- **Architecture**: `ScreenContextEngine` in `core/screen_context.py`. Runs in background thread during recording (~56ms total). Returns `ScreenContext` dataclass with raw_text, app_type, proper_nouns, window_title
+- **App detection**: Heuristic keyword matching on window title + OCR text (e.g. "Discord" → CHAT, "Outlook" → EMAIL, "Visual Studio" → CODE, "cmd.exe" → TERMINAL)
+- **App types**: CHAT, EMAIL, CODE, TERMINAL, DOCUMENT, GENERAL — each has a dedicated system prompt
+- **Prompts**: Five app-type-specific system prompts (CHAT, EMAIL, CODE, TERMINAL, DOCUMENT) as module-level constants in screen_context.py
+- **Structural formatting**: Python handles deterministic fixes — chat trailing period removal
+- **Dependency**: Requires post-processing to be enabled (OCR feeds into both Whisper and Qwen)
+- **Graceful fallback**: If OCR fails for any reason, `capture()` returns None and transcription proceeds without context
+
+## Self-Learning Recognition
+- **Engine**: `LearningEngine` in `core/learning_engine.py` — passively builds per-app profiles from OCR screen data
+- **What it learns**: Per-app vocabulary (proper nouns seen on screen), style metrics (message length, capitalization ratio, punctuation ratio, formality score, abbreviation count), and app type with increasing confidence
+- **App key normalization**: Extracts stable identifiers from volatile window titles — "Discord - #general" and "Discord - #random" map to the same `discord` key. Detects web apps inside browsers (e.g. "Outlook - Google Chrome" → `outlook`)
+- **KNOWN_APPS**: Dict mapping name fragments to (app_key, display_name, app_type) — 30+ apps across chat, email, code, terminal, document categories
+- **Style merging**: Uses exponential moving average (EMA, alpha=0.3) so profiles stabilize over time but adapt. Needs ≥3 samples before style hints are used
+- **Storage**: JSON at `<app_root>/.resonance/learning/app_profiles.json` — separate from settings to avoid bloat
+- **Limits**: Max 100 vocabulary per app, max 200 profiles total, stale profiles (90 days unused) auto-cleaned
+- **Privacy**: Never stores raw OCR text or conversations — only app identifiers, proper noun vocabulary, and aggregate statistical metrics
+- **Dependency chain**: Requires both post-processing AND OSR to be enabled (settings UI enforces this with grayed-out toggles)
+- **Thread safety**: All mutations through `threading.Lock()` (same pattern as PostProcessor)
+- **Overlay badges**: OSR-only shows generic type ("Chat", "Email"); self-learning shows specific app name ("Discord", "Outlook"). Hidden for "General" type
+
+## UI Components (v3.0)
 - **ToastNotification**: Dark pill at bottom-right, supports multi-line messages + bold details section. "Resonance" header at 15px bold.
-- **ClipboardToast**: Small centered pill at bottom, shows "Text entered" (clipboard) or "Typing" (char-by-char)
-- **RecordingOverlay**: Pill at bottom-center with waveform. Supports stacked feature badges above pill (e.g. "Post-Processing: ON") — only visible when features are enabled
+- **ClipboardToast**: Centered pill at bottom (240×52), shows "Text entered" (clipboard) or "Typing" (char-by-char) at 24px
+- **RecordingOverlay**: Pill at bottom-center with waveform. During recording: stacked feature badges (e.g. "Learning OSR: ON", "Post-Processing: ON"). During typing/pasted: detected app badge + estimated accuracy badge. Hidden for "General" type
 - **AboutDialog**: RoundedDialog with 28px title, subtitle, description mentioning Whisper + Qwen, author, version from importlib.metadata
-- **Startup toast**: Shows hotkey, model name, post-processing status, and entry method (details in bold)
+- **Startup toast**: Shows hotkey, model name, OSR status (with learning indicator), post-processing status, and entry method (details in bold)
+- **Settings**: Dependency-chained toggles (PP → OSR → Self-Learning) with grayed-out labels showing requirements. Learning stats cards: Apps Learned, Words Learned, Top App, Avg Confidence
 
 ## Future: macOS Support
 - **Goal**: Single Python codebase that runs on both Windows and Mac
