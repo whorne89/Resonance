@@ -85,8 +85,6 @@ class TranscriptionWorker(QObject):
                 from core.screen_context import AppType
                 if self.ocr_context.app_type == AppType.CHAT:
                     text = ScreenContextEngine.apply_chat_formatting(text)
-                elif self.ocr_context.app_type == AppType.EMAIL:
-                    text = ScreenContextEngine.apply_email_structure(text, self.ocr_context)
 
             self.finished.emit(text)
         except Exception as e:

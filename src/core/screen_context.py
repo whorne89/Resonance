@@ -162,6 +162,22 @@ _COMMON_UPPER = frozenset({
     "Delete", "Settings", "Search", "Menu", "Type",
     "Start", "Stop", "Cancel", "Apply", "Submit",
     "Log", "Sign", "Out", "In", "Up", "Down",
+    # Email / webmail UI
+    "Inbox", "Drafts", "Sent", "Items", "Junk", "Email",
+    "Favorites", "Paused", "Notes", "Admin", "Folders",
+    "Archive", "Trash", "Spam", "Compose", "Forward",
+    # General app UI
+    "On", "Off", "Click", "Select", "Add", "Remove",
+    "Page", "Mail", "Chat", "Activity", "Switch",
+    "Professional", "Service", "Training", "Center",
+    "Resource", "Sensitivity", "Insights",
+    # Code / dev UI
+    "Code", "Debug", "Run", "Build", "Terminal",
+    "Output", "Problems", "Extensions", "Explorer",
+    # Common sentence starters OCR picks up
+    "Now", "If", "These", "Done", "Working", "Added",
+    "Searched", "Requires", "Captures", "Reads",
+    "Nothing", "Let",
 })
 
 # ── App detection keywords ───────────────────────────────────────────
@@ -335,6 +351,9 @@ class ScreenContextEngine:
             clean = word.strip(".,!?:;\"'()[]{}")
             if not clean or len(clean) < 2:
                 continue
+            # Skip words with non-alpha noise (OCR artifacts like "BcTg", "QLabe1C")
+            if not clean.isalpha() and not clean.replace("'", "").isalpha():
+                continue
             if clean[0].isupper() and clean not in _COMMON_UPPER:
                 if not clean.isupper() or len(clean) <= 4:
                     lower = clean.lower()
@@ -389,31 +408,3 @@ class ScreenContextEngine:
             text = text[:-1]
         return text
 
-    @staticmethod
-    def apply_email_structure(text, context):
-        """Add greeting if recipient detected in OCR text."""
-        if not text or len(text.split()) < 10:
-            return text
-
-        # Try to find recipient from "To:" field in OCR
-        recipient = None
-        for line in context.raw_text.split("\n"):
-            stripped = line.strip()
-            if stripped.lower().startswith("to:"):
-                # Extract the name part (before any email address)
-                name_part = stripped[3:].strip()
-                # Remove email if present
-                if "<" in name_part:
-                    name_part = name_part[:name_part.index("<")].strip()
-                if name_part and len(name_part) < 50:
-                    recipient = name_part
-                break
-
-        if not recipient:
-            return text
-
-        greetings = ["hi ", "hey ", "hello ", "dear ", "good morning", "good afternoon"]
-        if any(text.lower().startswith(g) for g in greetings):
-            return text
-
-        return f"Hi {recipient},\n\n{text}"
