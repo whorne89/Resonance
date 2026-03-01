@@ -383,9 +383,18 @@ class VTTApplication(QObject):
                     # Set accuracy and detected app for overlay badges
                     if self.overlay:
                         self.overlay.set_accuracy(confidence)
-                        self.overlay.set_detected_app(
-                            self._resolve_app_label(self._current_ocr_context)
-                        )
+                        if self.learning_engine is not None:
+                            # Self-learning: show specific app (e.g., "Discord")
+                            self.overlay.set_detected_app(
+                                self._resolve_app_label(self._current_ocr_context)
+                            )
+                        elif self.screen_context is not None:
+                            # OSR only: show generic type (e.g., "Chat")
+                            self.overlay.set_detected_app(
+                                self._resolve_type_label(self._current_ocr_context)
+                            )
+                        else:
+                            self.overlay.set_detected_app(None)
                     # Show typing state on overlay for char-by-char mode
                     if not self.keyboard_typer.use_clipboard and self.overlay:
                         self.overlay.show_typing()
@@ -561,6 +570,19 @@ class VTTApplication(QObject):
 
         # Update overlay feature badges
         self._update_overlay_features()
+
+    def _resolve_type_label(self, ocr_context):
+        """Resolve a generic type label from OCR context (e.g., "Chat", "Email").
+
+        Used when OSR is on but self-learning is off.
+        Returns None for "general" type.
+        """
+        if not ocr_context:
+            return None
+        app_type = ocr_context.app_type.value
+        if app_type == "general":
+            return None
+        return app_type.capitalize()
 
     def _resolve_app_label(self, ocr_context):
         """Resolve a display label for the detected app.
