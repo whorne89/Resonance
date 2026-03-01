@@ -8,6 +8,7 @@ Resonance is a Windows voice-to-text desktop application that uses Whisper (via 
 - **GUI**: PySide6 (Qt for Python)
 - **Audio**: sounddevice (recording), winsound (notification tones)
 - **Transcription**: faster-whisper (CTranslate2 backend, CPU only)
+- **OCR**: winocr (Windows native OCR), mss (screenshot capture)
 - **Hotkeys**: pynput
 - **Typing output**: pynput keyboard + pyperclip
 - **Threading**: QThread for async transcription
@@ -24,6 +25,7 @@ src/
     hotkey_manager.py        - Global hotkey registration (pynput)
     dictionary.py            - Post-transcription word replacement (exact + fuzzy)
     post_processor.py        - LLM post-processing via llama-server (grammar/punctuation/filler cleanup)
+    screen_context.py        - OCR screen capture, app-type detection, name extraction
     sound_effects.py         - Notification tones via winsound (WAV files)
   gui/
     system_tray.py           - System tray icon with context menu
@@ -53,8 +55,9 @@ src/
 
 ## Transcription Flow
 1. User holds hotkey → start tone plays → AudioRecorder captures audio → overlay shows recording state
+1a. If OCR enabled, ScreenContextEngine.capture() fires in background thread (~56ms) — captures window, runs OCR, detects app type, extracts proper nouns
 2. User releases hotkey → stop tone plays → audio sent to TranscriptionWorker (QThread) → overlay shows processing state
-3. Worker calls Transcriber.transcribe() → PostProcessor.process() (if enabled) → returns text
+3. Worker calls Transcriber.transcribe(initial_prompt=ocr_names) → PostProcessor.process(system_prompt=app_type_prompt) (if enabled) → structural formatting (chat/email) → returns text
 4. VTTApplication.on_transcription_complete() applies dictionary replacements via DictionaryProcessor
 5. KeyboardTyper.type_text() outputs to active window → overlay fades out
 
@@ -98,12 +101,22 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - **Pipeline**: Whisper → PostProcessor.process() → DictionaryProcessor.apply() → KeyboardTyper
 - **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
 
+## Screen Context (OCR)
+- **Backend**: winocr (Windows native OCR engine), mss (screenshot capture)
+- **Scope**: Captures active window text on hotkey press to (1) extract proper nouns for Whisper vocabulary hints via `initial_prompt`, (2) detect app type (CHAT, EMAIL, CODE, DOCUMENT, GENERAL) for format-specific post-processing prompts
+- **Architecture**: `ScreenContextEngine` in `core/screen_context.py`. Runs in background thread during recording (~56ms total). Returns `ScreenContext` dataclass with raw_text, app_type, proper_nouns, window_title
+- **App detection**: Heuristic keyword matching on window title + OCR text (e.g. "Discord" → CHAT, "Outlook" → EMAIL, "Visual Studio" → CODE)
+- **Prompts**: Four app-type-specific system prompts (CHAT_SYSTEM_PROMPT, EMAIL_SYSTEM_PROMPT, CODE_SYSTEM_PROMPT, DOCUMENT_SYSTEM_PROMPT) as module-level constants in screen_context.py
+- **Structural formatting**: Python handles deterministic fixes — chat trailing period removal, email greeting insertion
+- **Dependency**: Requires post-processing to be enabled (OCR feeds into both Whisper and Qwen)
+- **Graceful fallback**: If OCR fails for any reason, `capture()` returns None and transcription proceeds without context
+
 ## UI Components (v2.1)
 - **ToastNotification**: Dark pill at bottom-right, supports multi-line messages + bold details section. "Resonance" header at 15px bold.
 - **ClipboardToast**: Small centered pill at bottom, shows "Text entered" (clipboard) or "Typing" (char-by-char)
 - **RecordingOverlay**: Pill at bottom-center with waveform. Supports stacked feature badges above pill (e.g. "Post-Processing: ON") — only visible when features are enabled
 - **AboutDialog**: RoundedDialog with 28px title, subtitle, description mentioning Whisper + Qwen, author, version from importlib.metadata
-- **Startup toast**: Shows hotkey, model name, post-processing status, and entry method (details in bold)
+- **Startup toast**: Shows hotkey, model name, post-processing status, screen context status, and entry method (details in bold)
 
 ## Future: macOS Support
 - **Goal**: Single Python codebase that runs on both Windows and Mac

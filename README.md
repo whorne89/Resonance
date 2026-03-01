@@ -9,6 +9,7 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 - **Local processing**: Uses Whisper AI running locally on your computer (no cloud, no API costs)
 - **Fast transcription**: Uses faster-whisper (4x faster than standard Whisper)
 - **AI post-processing**: Optional cleanup using a local Qwen 2.5 language model — fixes grammar, capitalization, punctuation, contractions, quotations, and sentence breaks; removes filler words (um, uh) and stutters
+- **Screen context (OCR)**: Captures the active window to improve name accuracy and adapt formatting for chat, email, code, and documents
 - **Custom dictionary**: Post-transcription word replacement with exact and fuzzy matching
 - **Recording overlay**: Floating pill widget with live waveform visualization and feature badges
 - **Sound effects**: Audible start/stop tones with custom sound support
@@ -62,6 +63,7 @@ Right-click the system tray icon and select **Settings** to configure:
   - **Accurate**: Whisper Small (~500 MB), ~2s
   - **Precision**: Whisper Medium (~1.5 GB), ~5s
 - **Post-Processing (AI)**: Enable/disable AI-powered transcription cleanup using Qwen 2.5 1.5B (downloaded automatically, runs locally via llama.cpp)
+- **Screen Context (OCR)**: Enable OCR-based screen capture for app-aware formatting and name accuracy (requires Post-Processing)
 - **Audio Device**: Select which microphone to use
 - **Entry Method**: Choose between clipboard paste or character-by-character typing
 - **Custom Dictionary**: Add word replacements applied after transcription
@@ -78,6 +80,8 @@ Right-click the system tray icon and select **Settings** to configure:
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
+- **winocr**: Windows native OCR for screen context capture
+- **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation
 - **pyperclip**: Clipboard-based text entry
 
@@ -85,10 +89,11 @@ Right-click the system tray icon and select **Settings** to configure:
 
 1. Global hotkey listener detects when you press/release the configured hotkey
 2. Audio is recorded from your microphone at 16kHz (Whisper's native sample rate)
-3. When you release the hotkey, the audio is sent to faster-whisper for transcription
-4. If post-processing is enabled, the text is cleaned up by Qwen 2.5 via a local llama-server instance (fixes grammar, punctuation, filler words, stutters)
-5. Custom dictionary replacements are applied
-6. Text is typed into the currently focused window via clipboard paste or keyboard simulation
+3. If screen context is enabled, OCR captures the active window in a background thread during recording (~56ms)
+4. When you release the hotkey, the audio is sent to faster-whisper for transcription (OCR-detected names are passed as vocabulary hints)
+5. If post-processing is enabled, the text is cleaned up by Qwen 2.5 via a local llama-server instance with an app-type-specific prompt (chat, email, code, or document)
+6. Custom dictionary replacements are applied
+7. Text is typed into the currently focused window via clipboard paste or keyboard simulation
 
 ## Troubleshooting
 
@@ -132,7 +137,7 @@ MIT License
 
 - **In-app updater** — Check GitHub for new versions from Settings. Source installs update via `git pull` + `uv sync`; future exe builds will download from GitHub Releases. Version check logic is shared between both.
 - **Light / Dark / System theme** — Toggle between light mode, dark mode, or follow the system setting. Each can be selected independently in Settings.
-- **On-screen recognition (OCR)** — Capture and read text from the screen or a selected region.
+- ~~**On-screen recognition (OCR)**~~ — Shipped in v2.3.0 as Screen Context.
 - **macOS support** — Single Python codebase for Windows and Mac with platform-specific abstractions for sound, hotkeys, and typing.
 
 ## Changelog
