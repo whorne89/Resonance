@@ -523,10 +523,10 @@ class VTTApplication(QObject):
         if not self.overlay:
             return
         features = []
+        if self.screen_context is not None:
+            features.append("OSR: ON")
         if self.config.get_post_processing_enabled():
             features.append("Post-Processing: ON")
-        if self.screen_context is not None:
-            features.append("Screen Context: ON")
         self.overlay.set_features(features)
 
     def quit(self):
@@ -613,8 +613,8 @@ def main():
             )
             startup_details = (
                 f"Model: {model_label}\n"
+                f"OSR: {ocr_status}\n"
                 f"Post-processing: {pp_status}\n"
-                f"Screen context: {ocr_status}\n"
                 f"Entry: {entry_method}"
             )
             tray_icon.show_message("Service Started", startup_msg, details=startup_details)
@@ -655,8 +655,8 @@ def main():
         startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
         startup_details = (
             f"Model: {model_label}\n"
+            f"OSR: {ocr_status}\n"
             f"Post-processing: {pp_status}\n"
-            f"Screen context: {ocr_status}\n"
             f"Entry: {entry_method}"
         )
         tray_icon.show_message("Service Started", startup_msg, details=startup_details)

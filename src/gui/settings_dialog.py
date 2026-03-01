@@ -651,12 +651,12 @@ class SettingsDialog(RoundedDialog):
         pp_col.addWidget(pp_desc)
         layout.addRow("", pp_col)
 
-        # OCR screen context checkbox + description
-        self.ocr_cb = QCheckBox("Screen Context (OCR)")
+        # On-Screen Recognition checkbox + description
+        self.ocr_cb = QCheckBox("On-Screen Recognition (OSR)")
         ocr_desc = QLabel(
-            "Captures the active window to improve name accuracy\n"
-            "and adapt formatting for chat, email, code, and documents.\n"
-            "Requires Post-Processing to be enabled."
+            "Reads your active window to learn names and detect\n"
+            "the app type (chat, email, code, document) so dictation\n"
+            "adapts its formatting. Requires Post-Processing."
         )
         ocr_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
 
@@ -1082,7 +1082,7 @@ class SettingsDialog(RoundedDialog):
             if pp_enabled != old_pp:
                 changes.append(f"Post-processing \u2192 {'On' if pp_enabled else 'Off'}")
             if ocr_enabled != old_ocr:
-                changes.append(f"Screen context \u2192 {'On' if ocr_enabled else 'Off'}")
+                changes.append(f"OSR \u2192 {'On' if ocr_enabled else 'Off'}")
 
             # Nothing changed — just close
             if not changes:
