@@ -39,7 +39,7 @@ from utils.logger import setup_logger
 class TranscriptionWorker(QObject):
     """Worker for running transcription in background thread."""
 
-    finished = Signal(str)  # Emits transcribed text
+    finished = Signal(str, float)  # Emits transcribed text + confidence (0.0-1.0)
     error = Signal(str)  # Emits error message
 
     def __init__(self, transcriber, audio_data, post_processor=None, logger=None, ocr_context=None):
@@ -101,7 +101,8 @@ class TranscriptionWorker(QObject):
                 if self.ocr_context.app_type == AppType.CHAT:
                     text = ScreenContextEngine.apply_chat_formatting(text)
 
-            self.finished.emit(text)
+            confidence = getattr(self.transcriber, 'last_confidence', 0.0)
+            self.finished.emit(text, confidence)
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Transcription failed: {e}")
@@ -167,6 +168,12 @@ class VTTApplication(QObject):
             self.screen_context = ScreenContextEngine()
         self._current_ocr_context = None
 
+        # Self-learning engine — learns from OCR data over time
+        self.learning_engine = None
+        if self.config.get_learning_enabled() and self.screen_context is not None:
+            from core.learning_engine import LearningEngine
+            self.learning_engine = LearningEngine()
+
         # Set audio device from config
         device_idx = self.config.get_audio_device()
         if device_idx is not None:
@@ -223,6 +230,13 @@ class VTTApplication(QObject):
                 def _capture_ocr():
                     try:
                         self._current_ocr_context = self.screen_context.capture()
+                        # Feed learning engine with OCR data
+                        if self._current_ocr_context and self.learning_engine:
+                            ctx = self._current_ocr_context
+                            self.learning_engine.learn_from_context(
+                                ctx.window_title, ctx.raw_text, ctx.app_type.value
+                            )
+                            self.learning_engine.save()
                     except Exception as e:
                         self.logger.warning(f"OCR capture failed: {e}")
                         self._current_ocr_context = None
@@ -340,14 +354,15 @@ class VTTApplication(QObject):
         # Start thread
         self.transcription_thread.start()
 
-    def on_transcription_complete(self, text):
+    def on_transcription_complete(self, text, confidence=0.0):
         """
         Called when transcription is complete.
 
         Args:
             text: Transcribed text
+            confidence: Whisper confidence score (0.0-1.0)
         """
-        self.logger.info(f"Transcription complete: '{text}'")
+        self.logger.info(f"Transcription complete: '{text}' (confidence={confidence:.0%})")
 
         try:
             # Apply custom dictionary replacements
@@ -365,6 +380,12 @@ class VTTApplication(QObject):
             if text:
                 try:
                     self.logger.info("Starting text output...")
+                    # Set accuracy and detected app for overlay badges
+                    if self.overlay:
+                        self.overlay.set_accuracy(confidence)
+                        self.overlay.set_detected_app(
+                            self._resolve_app_label(self._current_ocr_context)
+                        )
                     # Show typing state on overlay for char-by-char mode
                     if not self.keyboard_typer.use_clipboard and self.overlay:
                         self.overlay.show_typing()
@@ -528,8 +549,39 @@ class VTTApplication(QObject):
         elif not ocr_enabled:
             self.screen_context = None
 
+        # Update learning engine — requires screen context
+        learning_enabled = self.config.get_learning_enabled() and self.screen_context is not None
+        if learning_enabled and self.learning_engine is None:
+            from core.learning_engine import LearningEngine
+            self.learning_engine = LearningEngine()
+        elif not learning_enabled:
+            if self.learning_engine:
+                self.learning_engine.save()
+            self.learning_engine = None
+
         # Update overlay feature badges
         self._update_overlay_features()
+
+    def _resolve_app_label(self, ocr_context):
+        """Resolve a display label for the detected app.
+
+        Returns specific app name (e.g. "Discord") if recognized,
+        otherwise the generic type (e.g. "Chat", "General").
+        """
+        if not ocr_context:
+            return None
+        # Try to match window title against known apps for a specific name
+        from core.learning_engine import KNOWN_APPS
+        title_lower = ocr_context.window_title.lower() if ocr_context.window_title else ""
+        for app_name in sorted(KNOWN_APPS, key=len, reverse=True):
+            if app_name in title_lower:
+                _, display_name, _ = KNOWN_APPS[app_name]
+                return display_name
+        # Fall back to generic type
+        app_type = ocr_context.app_type.value
+        if app_type == "general":
+            return None
+        return app_type.capitalize()
 
     def _update_overlay_features(self):
         """Update the recording overlay's feature badges based on config."""
@@ -537,7 +589,10 @@ class VTTApplication(QObject):
             return
         features = []
         if self.screen_context is not None:
-            features.append("OSR: ON")
+            if self.config.get_learning_enabled():
+                features.append("Learning OSR: ON")
+            else:
+                features.append("OSR: ON")
         if self.config.get_post_processing_enabled():
             features.append("Post-Processing: ON")
         self.overlay.set_features(features)
@@ -552,6 +607,10 @@ class VTTApplication(QObject):
         # Stop recording if active
         if self.audio_recorder.is_recording():
             self.audio_recorder.stop_recording()
+
+        # Save learning data
+        if self.learning_engine:
+            self.learning_engine.save()
 
         # Shut down post-processor
         if self.post_processor:
@@ -616,7 +675,10 @@ def main():
         def _show_post_download_toast():
             """Show startup toast after model download completes."""
             pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-            ocr_status = "On" if vtt_app.screen_context is not None else "Off"
+            if vtt_app.screen_context is not None:
+                osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
+            else:
+                osr_status = "OSR: Off"
             use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
             entry_method = "Clipboard" if use_clipboard else "Character-by-character"
 
@@ -626,7 +688,7 @@ def main():
             )
             startup_details = (
                 f"Model: {model_label}\n"
-                f"OSR: {ocr_status}\n"
+                f"{osr_status}\n"
                 f"Post-processing: {pp_status}\n"
                 f"Entry: {entry_method}"
             )
@@ -661,14 +723,17 @@ def main():
     else:
         # Normal startup — show info toast
         pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-        ocr_status = "On" if vtt_app.screen_context is not None else "Off"
+        if vtt_app.screen_context is not None:
+            osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
+        else:
+            osr_status = "OSR: Off"
         use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
         entry_method = "Clipboard" if use_clipboard else "Character-by-character"
 
         startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
         startup_details = (
             f"Model: {model_label}\n"
-            f"OSR: {ocr_status}\n"
+            f"{osr_status}\n"
             f"Post-processing: {pp_status}\n"
             f"Entry: {entry_method}"
         )

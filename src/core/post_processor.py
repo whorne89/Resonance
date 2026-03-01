@@ -337,6 +337,16 @@ class PostProcessor:
                 )
                 return text
 
+        # Guard: comma spam — if output has more commas than words/3, model glitched
+        out_words = cleaned.split()
+        comma_count = cleaned.count(",")
+        if len(out_words) > 3 and comma_count > len(out_words) / 3:
+            self.logger.warning(
+                f"Post-processing comma spam ({comma_count} commas in "
+                f"{len(out_words)} words): '{cleaned[:80]}', returning original"
+            )
+            return text
+
         self.logger.info(f"Post-processing: '{text}' -> '{cleaned}'")
         return cleaned
 

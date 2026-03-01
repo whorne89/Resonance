@@ -108,6 +108,7 @@ class Transcriber:
             self.load_model()
 
         if audio_data is None or len(audio_data) == 0:
+            self.last_confidence = 0.0
             return ""
 
         try:
@@ -122,11 +123,23 @@ class Transcriber:
 
             # Combine all segments into single text
             text_parts = []
+            logprobs = []
             for segment in segments:
                 text_parts.append(segment.text)
+                logprobs.append(segment.avg_logprob)
 
             result = " ".join(text_parts).strip()
-            self.logger.info(f"Transcription result: '{result}' ({len(result)} chars)")
+
+            # Convert avg log probability to 0-100% confidence
+            import math
+            if logprobs:
+                avg_logprob = sum(logprobs) / len(logprobs)
+                self.last_confidence = min(1.0, math.exp(avg_logprob))
+            else:
+                self.last_confidence = 0.0
+
+            self.logger.info(f"Transcription result: '{result}' ({len(result)} chars, "
+                             f"confidence={self.last_confidence:.0%})")
             return result
 
         except Exception as e:

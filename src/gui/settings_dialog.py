@@ -639,10 +639,12 @@ class SettingsDialog(RoundedDialog):
         # Post-processing checkbox + description (same pattern as Quality)
         self.post_processing_cb = QCheckBox("Post-Processing (AI)")
         pp_desc = QLabel(
-            "Fixes grammar, capitalization, punctuation, contractions,\n"
-            "quotations, and sentence breaks. Removes filler words\n"
-            "and stutters. Powered by Qwen 2.5 (local, offline)."
+            "Fixes grammar, capitalization, punctuation, contractions, quotations, and "
+            "sentence breaks. Removes filler words like \"um\" and \"uh\", and cleans up "
+            "stuttered repeats. Runs entirely on your machine using Qwen 2.5 — no data "
+            "leaves your computer. Required for On-Screen Recognition and Self-Learning."
         )
+        pp_desc.setWordWrap(True)
         pp_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
 
         pp_col = QVBoxLayout()
@@ -653,11 +655,15 @@ class SettingsDialog(RoundedDialog):
 
         # On-Screen Recognition checkbox + description
         self.ocr_cb = QCheckBox("On-Screen Recognition (OSR)")
+        self._ocr_label_base = "On-Screen Recognition (OSR)"
         ocr_desc = QLabel(
-            "Reads your active window to learn names and detect\n"
-            "the app type (chat, email, code, document) so dictation\n"
-            "adapts its formatting. Requires Post-Processing."
+            "Takes a screenshot of your active window each time you dictate to identify "
+            "the app you're using (chat, email, code, document) and extract names visible "
+            "on screen. Dictation formatting automatically adapts — casual in Discord, "
+            "professional in Outlook, technical in VS Code. Names on screen are used as "
+            "pronunciation hints so Whisper spells them correctly."
         )
+        ocr_desc.setWordWrap(True)
         ocr_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
 
         ocr_col = QVBoxLayout()
@@ -666,8 +672,28 @@ class SettingsDialog(RoundedDialog):
         ocr_col.addWidget(ocr_desc)
         layout.addRow("", ocr_col)
 
-        # Disable OCR when post-processing is off
+        # Self-Learning Recognition checkbox + description
+        self.learning_cb = QCheckBox("Self-Learning Recognition")
+        self._learning_label_base = "Self-Learning Recognition"
+        learning_desc = QLabel(
+            "Builds a profile for each app you use over time. Learns which names appear "
+            "frequently, how formal the communication style is, and what kind of vocabulary "
+            "you encounter. The more you dictate, the better it gets — adapting punctuation, "
+            "capitalization, and word hints to match each app's style. No conversations are "
+            "stored, only statistical patterns."
+        )
+        learning_desc.setWordWrap(True)
+        learning_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+        learning_col = QVBoxLayout()
+        learning_col.setSpacing(2)
+        learning_col.addWidget(self.learning_cb)
+        learning_col.addWidget(learning_desc)
+        layout.addRow("", learning_col)
+
+        # Dependency chain: PP → OSR → Self-Learning
         self.post_processing_cb.stateChanged.connect(self._on_pp_toggled)
+        self.ocr_cb.stateChanged.connect(self._on_ocr_toggled)
 
         group.setLayout(layout)
         return group
@@ -677,8 +703,22 @@ class SettingsDialog(RoundedDialog):
         if not self.post_processing_cb.isChecked():
             self.ocr_cb.setChecked(False)
             self.ocr_cb.setEnabled(False)
+            self.ocr_cb.setText(f"{self._ocr_label_base} (requires Post-Processing)")
         else:
             self.ocr_cb.setEnabled(True)
+            self.ocr_cb.setText(self._ocr_label_base)
+        # Cascade: OSR state affects self-learning
+        self._on_ocr_toggled()
+
+    def _on_ocr_toggled(self, state=None):
+        """Enable/disable Self-Learning Recognition checkbox based on OSR state."""
+        if not self.ocr_cb.isChecked() or not self.ocr_cb.isEnabled():
+            self.learning_cb.setChecked(False)
+            self.learning_cb.setEnabled(False)
+            self.learning_cb.setText(f"{self._learning_label_base} (requires Post-Processing and OSR)")
+        else:
+            self.learning_cb.setEnabled(True)
+            self.learning_cb.setText(self._learning_label_base)
 
     def create_audio_group(self):
         """Create audio device configuration group."""
@@ -907,6 +947,40 @@ class SettingsDialog(RoundedDialog):
         else:
             return f"{seconds / 3600:.1f}h"
 
+    def _load_learning_stats(self):
+        """Load learning stats from the profiles JSON file."""
+        import json
+        from utils.resource_path import get_app_data_path
+        from pathlib import Path
+
+        result = {"apps_learned": 0, "words_learned": 0, "top_app": "—", "avg_confidence": "—"}
+        profiles_path = Path(get_app_data_path("learning")) / "app_profiles.json"
+        if not profiles_path.exists():
+            return result
+
+        try:
+            with open(profiles_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            profiles = data.get("profiles", {})
+            result["apps_learned"] = len(profiles)
+
+            top_sessions = 0
+            total_confidence = 0.0
+            for p in profiles.values():
+                result["words_learned"] += len(p.get("vocabulary", []))
+                sessions = p.get("sessions", 0)
+                if sessions > top_sessions:
+                    top_sessions = sessions
+                    result["top_app"] = p.get("display_name", p.get("app_key", "—"))
+                total_confidence += p.get("confidence", 0.0)
+
+            if profiles:
+                avg = total_confidence / len(profiles)
+                result["avg_confidence"] = f"{avg:.0%}"
+        except Exception:
+            pass
+        return result
+
     def create_statistics_group(self):
         """Create usage statistics as a dashboard card grid."""
         group = QGroupBox("Usage Statistics")
@@ -935,7 +1009,7 @@ class SettingsDialog(RoundedDialog):
             except ValueError:
                 pass
 
-        # Build 2 rows × 4 columns of stat cards
+        # Build stat cards grid (4 columns)
         grid = QGridLayout()
         grid.setSpacing(8)
 
@@ -948,6 +1022,15 @@ class SettingsDialog(RoundedDialog):
             ("Time Recorded",     self._format_duration(total_seconds)),
             ("Avg Per Day",       self._format_duration(avg_rec_per_day)),
             ("Avg Transcription", self._format_duration(total_seconds / total_transcriptions if total_transcriptions > 0 else 0)),
+        ]
+
+        # Learning stats from profiles JSON
+        learning_stats = self._load_learning_stats()
+        cards += [
+            ("Apps Learned",     f"{learning_stats['apps_learned']:,}"),
+            ("Words Learned",    f"{learning_stats['words_learned']:,}"),
+            ("Top App",          learning_stats['top_app']),
+            ("Avg Confidence",   learning_stats['avg_confidence']),
         ]
 
         for i, (title, value) in enumerate(cards):
@@ -1037,9 +1120,15 @@ class SettingsDialog(RoundedDialog):
 
         # OCR screen context
         self.ocr_cb.setChecked(self.config.get_ocr_enabled())
-        # Disable OCR checkbox if post-processing is off
         if not self.config.get_post_processing_enabled():
             self.ocr_cb.setEnabled(False)
+            self.ocr_cb.setText(f"{self._ocr_label_base} (requires Post-Processing)")
+
+        # Self-Learning Recognition
+        self.learning_cb.setChecked(self.config.get_learning_enabled())
+        if not self.config.get_ocr_enabled() or not self.config.get_post_processing_enabled():
+            self.learning_cb.setEnabled(False)
+            self.learning_cb.setText(f"{self._learning_label_base} (requires Post-Processing and OSR)")
 
     def save_settings(self):
         """Save settings and emit signal."""
@@ -1051,6 +1140,7 @@ class SettingsDialog(RoundedDialog):
             use_clipboard = self.typing_paste_radio.isChecked()
             pp_enabled = self.post_processing_cb.isChecked()
             ocr_enabled = self.ocr_cb.isChecked()
+            learning_enabled = self.learning_cb.isChecked()
 
             # Validate hotkey (just check it's not empty)
             if not hotkey:
@@ -1068,6 +1158,7 @@ class SettingsDialog(RoundedDialog):
             old_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
             old_pp = self.config.get_post_processing_enabled()
             old_ocr = self.config.get_ocr_enabled()
+            old_learning = self.config.get_learning_enabled()
 
             changes = []
             if hotkey != old_hotkey:
@@ -1083,6 +1174,8 @@ class SettingsDialog(RoundedDialog):
                 changes.append(f"Post-processing \u2192 {'On' if pp_enabled else 'Off'}")
             if ocr_enabled != old_ocr:
                 changes.append(f"OSR \u2192 {'On' if ocr_enabled else 'Off'}")
+            if learning_enabled != old_learning:
+                changes.append(f"Self-Learning \u2192 {'On' if learning_enabled else 'Off'}")
 
             # Nothing changed — just close
             if not changes:
@@ -1121,6 +1214,7 @@ class SettingsDialog(RoundedDialog):
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
             self.config.set_post_processing_enabled(pp_enabled)
             self.config.set_ocr_enabled(ocr_enabled)
+            self.config.set_learning_enabled(learning_enabled)
             self.config.save()
 
             # Emit signal

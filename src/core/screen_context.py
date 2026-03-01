@@ -16,6 +16,7 @@ class AppType(Enum):
     CHAT = "chat"
     EMAIL = "email"
     CODE = "code"
+    TERMINAL = "terminal"
     DOCUMENT = "document"
     GENERAL = "general"
 
@@ -45,6 +46,8 @@ CHAT_SYSTEM_PROMPT = (
     "Keep the word 'like' when used casually — it is NOT filler in chat.\n"
     "Do NOT remove or change ANY words except um/uh/stutters.\n"
     "Do NOT reword, rephrase, or answer the text.\n"
+    "Do NOT insert commas between every word. Only add commas at natural pauses.\n"
+    "Most sentences need zero or one comma, not many.\n"
     "Output ONLY the cleaned text.\n\n"
     "Input: yeah yeah i know\n"
     "Output: yeah yeah, I know.\n\n"
@@ -83,7 +86,15 @@ CHAT_SYSTEM_PROMPT = (
     "Input: wait what did he say about that\n"
     "Output: Wait, what did he say about that?\n\n"
     "Input: do you think um do you think that works\n"
-    "Output: Do you think that works?"
+    "Output: Do you think that works?\n\n"
+    "Input: i just got back from the store\n"
+    "Output: I just got back from the store.\n\n"
+    "Input: that sounds good to me\n"
+    "Output: that sounds good to me\n\n"
+    "Input: yeah i was thinking we could do that tomorrow\n"
+    "Output: yeah I was thinking we could do that tomorrow\n\n"
+    "Input: i need to finish this before the meeting starts\n"
+    "Output: I need to finish this before the meeting starts."
 )
 
 EMAIL_SYSTEM_PROMPT = (
@@ -152,6 +163,27 @@ CODE_SYSTEM_PROMPT = (
     "Output: Yeah, the bug is in the onClick handler for the submit button component."
 )
 
+TERMINAL_SYSTEM_PROMPT = (
+    "You clean up voice-transcribed text spoken in a terminal or command line. "
+    "Preserve ALL technical terms, commands, paths, and arguments exactly.\n"
+    "ONLY do these things:\n"
+    "1. Remove um, uh, and stuttered repeated words\n"
+    "2. Fix capitalization and add punctuation for readability\n"
+    "DO NOT change command names, file paths, flags, or technical terms.\n"
+    "DO NOT respond to the text or answer questions.\n"
+    "Output ONLY the cleaned text.\n\n"
+    "Input: um run the the build script and then deploy to staging\n"
+    "Output: Run the build script and then deploy to staging.\n\n"
+    "Input: i need to ssh into the the production server and check the logs\n"
+    "Output: I need to SSH into the production server and check the logs.\n\n"
+    "Input: can you uh install the dependencies and run the tests\n"
+    "Output: Can you install the dependencies and run the tests?\n\n"
+    "Input: the um git push failed because of a merge conflict in main\n"
+    "Output: The git push failed because of a merge conflict in main.\n\n"
+    "Input: we should add a new feature that handles user authentication\n"
+    "Output: We should add a new feature that handles user authentication."
+)
+
 DOCUMENT_SYSTEM_PROMPT = (
     "You clean up voice-transcribed text for a document. "
     "Use clear, well-structured sentences with proper punctuation.\n"
@@ -183,6 +215,7 @@ _APP_TYPE_PROMPTS = {
     AppType.CHAT: CHAT_SYSTEM_PROMPT,
     AppType.EMAIL: EMAIL_SYSTEM_PROMPT,
     AppType.CODE: CODE_SYSTEM_PROMPT,
+    AppType.TERMINAL: TERMINAL_SYSTEM_PROMPT,
     AppType.DOCUMENT: DOCUMENT_SYSTEM_PROMPT,
 }
 
@@ -228,6 +261,11 @@ _CODE_KEYWORDS = [
     "visual studio", "vscode", "code -", "pycharm", "intellij",
     "vim", "neovim", "sublime", "atom", "cursor", "zed",
 ]
+_TERMINAL_KEYWORDS = [
+    "windows terminal", "powershell", "command prompt", "git bash",
+    "claude code", "warp", "iterm", "mintty", "cmder", "hyper",
+    "terminal",  # generic — keep last so specific matches win
+]
 _DOC_KEYWORDS = [
     "word", "google docs", "notion", "obsidian", "notepad",
     "libreoffice", "pages",
@@ -239,6 +277,7 @@ _CONTEXT_PREFIX = {
     AppType.CHAT: "A conversation mentioning",
     AppType.EMAIL: "An email discussion involving",
     AppType.CODE: "A technical discussion about",
+    AppType.TERMINAL: "A technical discussion about",
     AppType.DOCUMENT: "A document mentioning",
     AppType.GENERAL: "A discussion mentioning",
 }
@@ -367,6 +406,9 @@ class ScreenContextEngine:
 
         if any(k in title for k in _CODE_KEYWORDS):
             return AppType.CODE
+
+        if any(k in title for k in _TERMINAL_KEYWORDS):
+            return AppType.TERMINAL
 
         if any(k in title for k in _DOC_KEYWORDS):
             return AppType.DOCUMENT
