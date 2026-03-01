@@ -406,10 +406,18 @@ class ScreenContextEngine:
 
     @staticmethod
     def apply_chat_formatting(text):
-        """Strip trailing period from chat messages."""
+        """Apply casual chat formatting: strip trailing period, lowercase start."""
         if not text:
             return text
         if text.endswith('.') and not text.endswith('...'):
             text = text[:-1]
+        # Lowercase the first character for casual chat style
+        # Skip if: standalone "I" (I'll, I'm, I), or first word is all-caps (TBH, IDK, LMAO)
+        if text and text[0].isupper():
+            first_word = text.split()[0] if text.split() else ""
+            is_standalone_I = text[0] == 'I' and (len(text) == 1 or not text[1].isalpha())
+            is_all_caps = first_word.isupper() and len(first_word) > 1
+            if not is_standalone_I and not is_all_caps:
+                text = text[0].lower() + text[1:]
         return text
 
