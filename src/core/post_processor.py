@@ -113,7 +113,7 @@ class PostProcessor:
         "yeah", "hmm", "ah", "oh",
     })
 
-    def process(self, raw_text):
+    def process(self, raw_text, system_prompt=None):
         """
         Process transcribed text to fix grammar, punctuation, and filler words.
 
@@ -139,7 +139,7 @@ class PostProcessor:
                 return raw_text
 
         try:
-            return self._process_via_api(raw_text)
+            return self._process_via_api(raw_text, system_prompt=system_prompt)
         except Exception as e:
             self.logger.error(f"Post-processing failed: {e}", exc_info=True)
             return raw_text
@@ -266,11 +266,11 @@ class PostProcessor:
                     pass
             self._server_process = None
 
-    def _process_via_api(self, text):
+    def _process_via_api(self, text, system_prompt=None):
         payload = json.dumps({
             "model": "qwen2.5",
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
             "temperature": 0.0,
