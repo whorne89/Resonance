@@ -651,8 +651,34 @@ class SettingsDialog(RoundedDialog):
         pp_col.addWidget(pp_desc)
         layout.addRow("", pp_col)
 
+        # OCR screen context checkbox + description
+        self.ocr_cb = QCheckBox("Screen Context (OCR)")
+        ocr_desc = QLabel(
+            "Captures the active window to improve name accuracy\n"
+            "and adapt formatting for chat, email, code, and documents.\n"
+            "Requires Post-Processing to be enabled."
+        )
+        ocr_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+        ocr_col = QVBoxLayout()
+        ocr_col.setSpacing(2)
+        ocr_col.addWidget(self.ocr_cb)
+        ocr_col.addWidget(ocr_desc)
+        layout.addRow("", ocr_col)
+
+        # Disable OCR when post-processing is off
+        self.post_processing_cb.stateChanged.connect(self._on_pp_toggled)
+
         group.setLayout(layout)
         return group
+
+    def _on_pp_toggled(self, state):
+        """Enable/disable OCR checkbox based on post-processing state."""
+        if not self.post_processing_cb.isChecked():
+            self.ocr_cb.setChecked(False)
+            self.ocr_cb.setEnabled(False)
+        else:
+            self.ocr_cb.setEnabled(True)
 
     def create_audio_group(self):
         """Create audio device configuration group."""
@@ -1009,6 +1035,12 @@ class SettingsDialog(RoundedDialog):
         # Post-processing
         self.post_processing_cb.setChecked(self.config.get_post_processing_enabled())
 
+        # OCR screen context
+        self.ocr_cb.setChecked(self.config.get_ocr_enabled())
+        # Disable OCR checkbox if post-processing is off
+        if not self.config.get_post_processing_enabled():
+            self.ocr_cb.setEnabled(False)
+
     def save_settings(self):
         """Save settings and emit signal."""
         try:
@@ -1018,6 +1050,7 @@ class SettingsDialog(RoundedDialog):
             device_idx = self.device_combo.currentData()
             use_clipboard = self.typing_paste_radio.isChecked()
             pp_enabled = self.post_processing_cb.isChecked()
+            ocr_enabled = self.ocr_cb.isChecked()
 
             # Validate hotkey (just check it's not empty)
             if not hotkey:
@@ -1034,6 +1067,7 @@ class SettingsDialog(RoundedDialog):
             old_device = self.config.get_audio_device()
             old_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
             old_pp = self.config.get_post_processing_enabled()
+            old_ocr = self.config.get_ocr_enabled()
 
             changes = []
             if hotkey != old_hotkey:
@@ -1047,6 +1081,8 @@ class SettingsDialog(RoundedDialog):
                 changes.append(f"Entry method \u2192 {method}")
             if pp_enabled != old_pp:
                 changes.append(f"Post-processing \u2192 {'On' if pp_enabled else 'Off'}")
+            if ocr_enabled != old_ocr:
+                changes.append(f"Screen context \u2192 {'On' if ocr_enabled else 'Off'}")
 
             # Nothing changed — just close
             if not changes:
@@ -1084,6 +1120,7 @@ class SettingsDialog(RoundedDialog):
             self.config.set_audio_device(device_idx)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
             self.config.set_post_processing_enabled(pp_enabled)
+            self.config.set_ocr_enabled(ocr_enabled)
             self.config.save()
 
             # Emit signal
