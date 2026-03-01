@@ -610,13 +610,12 @@ class VTTApplication(QObject):
         if not self.overlay:
             return
         features = []
-        if self.screen_context is not None:
-            if self.config.get_learning_enabled():
-                features.append("Learning OSR: ON")
-            else:
-                features.append("OSR: ON")
-        if self.config.get_post_processing_enabled():
-            features.append("Post-Processing: ON")
+        if self.config.get_learning_enabled():
+            features.append("Learning OSR")
+        elif self.screen_context is not None:
+            features.append("Post-Processing OSR")
+        elif self.config.get_post_processing_enabled():
+            features.append("Post-Processing")
         self.overlay.set_features(features)
 
     def quit(self):
