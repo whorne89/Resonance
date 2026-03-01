@@ -92,7 +92,7 @@ class Transcriber:
             self.model = None  # Force reload
         self.load_model()
 
-    def transcribe(self, audio_data, language="en"):
+    def transcribe(self, audio_data, language="en", initial_prompt=None):
         """
         Transcribe audio data to text.
 
@@ -117,6 +117,7 @@ class Transcriber:
                 language=language,
                 beam_size=5,
                 vad_filter=False,
+                initial_prompt=initial_prompt or None,
             )
 
             # Combine all segments into single text

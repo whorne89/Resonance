@@ -297,6 +297,14 @@ class ConfigManager:
         """Set whether post-processing is enabled."""
         self.set("post_processing", "enabled", value=enabled)
 
+    def get_ocr_enabled(self):
+        """Get whether OCR screen context is enabled."""
+        return self.get("ocr", "enabled", default=False)
+
+    def set_ocr_enabled(self, enabled):
+        """Set whether OCR screen context is enabled."""
+        self.set("ocr", "enabled", value=enabled)
+
     def get_statistics(self):
         """Get the statistics dict."""
         return self.get("statistics", default={})
