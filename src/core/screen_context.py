@@ -254,48 +254,48 @@ class ScreenContextEngine:
         return title, (x, y, w, h)
 
     def _capture_window(self, rect):
-        """Capture a screenshot of the given window region."""
+        """Capture a screenshot of the given window region.
+
+        Returns a tuple (rgba_bytes, width, height) for winocr, or None on failure.
+        """
         try:
             import mss
+            import numpy as np
             x, y, w, h = rect
             monitor = {"left": x, "top": y, "width": w, "height": h}
             with mss.mss() as sct:
                 screenshot = sct.grab(monitor)
-                # Convert to bytes for winocr
-                from PIL import Image
-                img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-                return img
+                # mss gives BGRA; winocr needs RGBA — swap B and R channels via numpy
+                arr = np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(-1, 4).copy()
+                arr[:, [0, 2]] = arr[:, [2, 0]]
+                return (arr.tobytes(), screenshot.width, screenshot.height)
         except Exception as e:
             self.logger.warning(f"OCR: screenshot failed: {e}")
             return None
 
     # ── OCR ──────────────────────────────────────────────────────────
 
-    def _extract_text(self, image):
-        """Run Windows native OCR on a PIL Image."""
+    def _extract_text(self, capture_data):
+        """Run Windows native OCR on raw RGBA bytes."""
         try:
             import asyncio
             import winocr
 
-            # winocr expects image bytes in PNG format
-            import io
-            buf = io.BytesIO()
-            image.save(buf, format="PNG")
-            img_bytes = buf.getvalue()
+            rgba_bytes, width, height = capture_data
 
             # winocr is async — run in a new event loop
             loop = asyncio.new_event_loop()
             try:
                 result = loop.run_until_complete(
-                    winocr.recognize_pil(image, lang="en")
+                    winocr.recognize_bytes(rgba_bytes, width, height, lang="en")
                 )
             finally:
                 loop.close()
 
-            # Extract text from result
+            # Extract text from result (WinRT OcrResult uses attributes, not dicts)
             lines = []
-            for line in result["lines"]:
-                lines.append(line["text"])
+            for line in result.lines:
+                lines.append(line.text)
             return "\n".join(lines)
         except Exception as e:
             self.logger.warning(f"OCR: text extraction failed: {e}")
