@@ -128,6 +128,13 @@ The batch files use a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink is
 
 MIT License
 
+## Roadmap
+
+- **In-app updater** — Check GitHub for new versions from Settings. Source installs update via `git pull` + `uv sync`; future exe builds will download from GitHub Releases. Version check logic is shared between both.
+- **Light / Dark / System theme** — Toggle between light mode, dark mode, or follow the system setting. Each can be selected independently in Settings.
+- **On-screen recognition (OCR)** — Capture and read text from the screen or a selected region.
+- **macOS support** — Single Python codebase for Windows and Mac with platform-specific abstractions for sound, hotkeys, and typing.
+
 ## Changelog
 
 ### v2.2.1
