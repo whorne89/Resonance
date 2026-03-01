@@ -73,6 +73,21 @@ class TranscriptionWorker(QObject):
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
 
+            # Guard: detect Whisper hallucinating from initial_prompt
+            # If transcription is short and mostly contains OCR nouns, it's not real speech
+            if text and self.ocr_context and self.ocr_context.proper_nouns:
+                words = text.replace('.', ' ').replace(',', ' ').split()
+                if len(words) <= 4:
+                    nouns_lower = {n.lower() for n in self.ocr_context.proper_nouns}
+                    noun_hits = sum(1 for w in words if w.lower() in nouns_lower)
+                    if noun_hits >= len(words) * 0.5:
+                        if self.logger:
+                            self.logger.warning(
+                                f"Prompt hallucination detected: '{text}' — "
+                                f"{noun_hits}/{len(words)} words from OCR nouns, discarding"
+                            )
+                        text = ""
+
             if text and self.post_processor:
                 if self.logger:
                     self.logger.info("Running post-processing...")
