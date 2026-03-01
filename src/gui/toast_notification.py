@@ -336,9 +336,9 @@ class ClipboardToast(QWidget):
     with fade in/out animation.  Same dark styling as ToastNotification.
     """
 
-    WIDTH = 190
-    HEIGHT = 36
-    RADIUS = 18
+    WIDTH = 220
+    HEIGHT = 44
+    RADIUS = 22
     MARGIN = 60  # Distance from bottom of screen
 
     BG_COLOR = QColor(26, 26, 46, 230)       # #1a1a2e at ~90% opacity
@@ -431,7 +431,7 @@ class ClipboardToast(QWidget):
         painter.drawPath(path)
 
         font = QFont("Calibri", 0)
-        font.setPixelSize(16)
+        font.setPixelSize(18)
         font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(self.TEXT_COLOR)
