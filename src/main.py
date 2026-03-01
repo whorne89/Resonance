@@ -26,6 +26,7 @@ from core.hotkey_manager import HotkeyManager
 from core.dictionary import DictionaryProcessor
 from core.post_processor import PostProcessor
 from core.sound_effects import SoundEffects
+from core.screen_context import ScreenContextEngine
 from gui.recording_overlay import RecordingOverlay
 from gui.system_tray import SystemTrayIcon
 from gui.settings_dialog import SettingsDialog
@@ -41,28 +42,51 @@ class TranscriptionWorker(QObject):
     finished = Signal(str)  # Emits transcribed text
     error = Signal(str)  # Emits error message
 
-    def __init__(self, transcriber, audio_data, post_processor=None, logger=None):
+    def __init__(self, transcriber, audio_data, post_processor=None, logger=None, ocr_context=None):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
         self.post_processor = post_processor
         self.logger = logger
+        self.ocr_context = ocr_context
 
     def run(self):
         """Run transcription."""
         try:
+            # Build OCR-derived hints if available
+            initial_prompt = None
+            system_prompt = None
+            if self.ocr_context:
+                initial_prompt = ScreenContextEngine.build_whisper_prompt(
+                    self.ocr_context.proper_nouns, self.ocr_context.app_type
+                )
+                system_prompt = ScreenContextEngine.build_system_prompt(
+                    self.ocr_context.app_type, self.ocr_context.proper_nouns
+                )
+                if self.logger:
+                    self.logger.info(f"OCR context: app_type={self.ocr_context.app_type.value}, "
+                                    f"nouns={self.ocr_context.proper_nouns}")
+
             if self.logger:
                 self.logger.info("Starting transcription...")
-            text = self.transcriber.transcribe(self.audio_data)
+            text = self.transcriber.transcribe(self.audio_data, initial_prompt=initial_prompt)
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
 
             if text and self.post_processor:
                 if self.logger:
                     self.logger.info("Running post-processing...")
-                text = self.post_processor.process(text)
+                text = self.post_processor.process(text, system_prompt=system_prompt)
                 if self.logger:
                     self.logger.info(f"Post-processing finished, got {len(text)} characters")
+
+            # Apply structural formatting based on app type
+            if self.ocr_context and text:
+                from core.screen_context import AppType
+                if self.ocr_context.app_type == AppType.CHAT:
+                    text = ScreenContextEngine.apply_chat_formatting(text)
+                elif self.ocr_context.app_type == AppType.EMAIL:
+                    text = ScreenContextEngine.apply_email_structure(text, self.ocr_context)
 
             self.finished.emit(text)
         except Exception as e:
@@ -124,6 +148,12 @@ class VTTApplication(QObject):
         if self.config.get_post_processing_enabled():
             self.post_processor = PostProcessor()
 
+        # Screen context (OCR) — requires post-processing
+        self.screen_context = None
+        if self.config.get_ocr_enabled() and self.post_processor is not None:
+            self.screen_context = ScreenContextEngine()
+        self._current_ocr_context = None
+
         # Set audio device from config
         device_idx = self.config.get_audio_device()
         if device_idx is not None:
@@ -173,6 +203,19 @@ class VTTApplication(QObject):
             self.sound_effects.play_start_tone()
 
             self.audio_recorder.start_recording()
+
+            # Fire OCR capture in background (non-blocking, runs during recording)
+            if self.screen_context:
+                import threading
+                def _capture_ocr():
+                    try:
+                        self._current_ocr_context = self.screen_context.capture()
+                    except Exception as e:
+                        self.logger.warning(f"OCR capture failed: {e}")
+                        self._current_ocr_context = None
+                threading.Thread(target=_capture_ocr, daemon=True).start()
+            else:
+                self._current_ocr_context = None
 
             # Update UI
             if self.tray_icon:
@@ -259,7 +302,8 @@ class VTTApplication(QObject):
         # Create worker and thread
         self.transcription_thread = QThread()
         self.transcription_worker = TranscriptionWorker(
-            self.transcriber, audio_data, self.post_processor, self.logger
+            self.transcriber, audio_data, self.post_processor, self.logger,
+            ocr_context=self._current_ocr_context
         )
 
         # Move worker to thread
@@ -464,6 +508,13 @@ class VTTApplication(QObject):
             self.post_processor.shutdown()
             self.post_processor = None
 
+        # Update screen context (OCR) — requires post-processing
+        ocr_enabled = self.config.get_ocr_enabled() and self.post_processor is not None
+        if ocr_enabled and self.screen_context is None:
+            self.screen_context = ScreenContextEngine()
+        elif not ocr_enabled:
+            self.screen_context = None
+
         # Update overlay feature badges
         self._update_overlay_features()
 
@@ -474,6 +525,8 @@ class VTTApplication(QObject):
         features = []
         if self.config.get_post_processing_enabled():
             features.append("Post-Processing: ON")
+        if self.screen_context is not None:
+            features.append("Screen Context: ON")
         self.overlay.set_features(features)
 
     def quit(self):
@@ -550,6 +603,7 @@ def main():
         def _show_post_download_toast():
             """Show startup toast after model download completes."""
             pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+            ocr_status = "On" if vtt_app.screen_context is not None else "Off"
             use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
             entry_method = "Clipboard" if use_clipboard else "Character-by-character"
 
@@ -560,6 +614,7 @@ def main():
             startup_details = (
                 f"Model: {model_label}\n"
                 f"Post-processing: {pp_status}\n"
+                f"Screen context: {ocr_status}\n"
                 f"Entry: {entry_method}"
             )
             tray_icon.show_message("Service Started", startup_msg, details=startup_details)
@@ -593,6 +648,7 @@ def main():
     else:
         # Normal startup — show info toast
         pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+        ocr_status = "On" if vtt_app.screen_context is not None else "Off"
         use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
         entry_method = "Clipboard" if use_clipboard else "Character-by-character"
 
@@ -600,6 +656,7 @@ def main():
         startup_details = (
             f"Model: {model_label}\n"
             f"Post-processing: {pp_status}\n"
+            f"Screen context: {ocr_status}\n"
             f"Entry: {entry_method}"
         )
         tray_icon.show_message("Service Started", startup_msg, details=startup_details)
