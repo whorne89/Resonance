@@ -303,7 +303,8 @@ class PostProcessor:
                          "i will", "i'll", "i would", "of course", "absolutely",
                          "understood", "okay, let", "okay, i", "great,",
                          "you're welcome", "you are welcome", "thank you!",
-                         "certainly", "i understand")
+                         "certainly", "i understand", "i'm sorry", "i apologize",
+                         "i use ", "i don't have", "as an ai")
         if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
             self.logger.warning(
                 f"Post-processing hallucination (answer): '{cleaned[:80]}', "
