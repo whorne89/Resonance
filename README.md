@@ -1,6 +1,6 @@
 # Resonance
 
-A local voice-to-text dictation application for Windows using OpenAI Whisper with AI post-processing from Qwen 2.5. Type with your voice in any application - browsers, chat windows, code editors, and more.
+A local voice-to-text dictation application using OpenAI Whisper with AI post-processing from Qwen 2.5. Type with your voice in any application - browsers, chat windows, code editors, and more.
 
 ## Features
 
@@ -18,10 +18,11 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 - **Simple interface**: Dark-themed system tray application with toast notifications
 - **Configurable**: Customize hotkey, model size, audio device, and typing method
 - **Automatic model download**: Downloads the speech model on first launch with progress animation
+- **Cross-platform**: Works on Windows and Linux (Debian package available)
 
 ## Requirements
 
-- **Windows 10 or 11**
+- **Windows 10/11 or Linux** (Debian-based distributions supported)
 - Python 3.12 (managed via uv)
 - Microphone
 
@@ -51,7 +52,7 @@ Right-click the system tray icon and select **Settings** to configure:
 - **Hotkey**: Change the push-to-talk keyboard shortcut
 - **Quality**: Choose a Whisper model for speech recognition
   - **Fastest**: Whisper Tiny (~70 MB), sub-second
-  - **Balanced**: Whisper Base (~140 MB), sub-second *(default)*
+  - **Balanced**: Whisper Base (~140 MB), sub-second _(default)_
   - **Accurate**: Whisper Small (~500 MB), ~2s
   - **Precision**: Whisper Medium (~1.5 GB), ~5s
 - **Post-Processing (AI)**: Enable/disable AI-powered transcription cleanup using Qwen 2.5 1.5B (downloaded automatically, runs locally via llama.cpp)
@@ -71,10 +72,12 @@ Right-click the system tray icon and select **Settings** to configure:
 - **Python 3.12** (pinned via `.python-version`, managed by uv)
 - **PySide6**: GUI framework (system tray, settings, overlays, toast notifications)
 - **sounddevice**: Audio recording
+- **simpleaudio**: Cross-platform audio playback for notification tones
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
 - **paddleocr**: Cross-platform OCR for screen context capture
+- **pywinctl**: Cross-platform window management (active window detection)
 - **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation
 - **pyperclip**: Clipboard-based text entry
@@ -97,12 +100,12 @@ Each feature builds on the previous one. Here's what changes at each level, usin
 
 Raw transcription from Whisper. It catches most words accurately and strips obvious filler sounds (um, uh), but punctuation, capitalization, and grammar are inconsistent.
 
-| You say | You get |
-|---------|---------|
+| You say                                                                                            | You get                                                                                         |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | "yeah i was talking to jake about the uh the kubernetes deployment and he said its basically done" | `yeah I was talking to Jake about the the Kubernetes deployment and he said its basically done` |
-| "hey sarah i wanted to follow up on the meeting about the robinson account" | `hey Sarah I wanted to follow up on the meeting about the Robinson account` |
-| "can you check if the env variable for the redis connection string is set" | `can you check if the env variable for the Redis connection string is set` |
-| "thanks for getting back to me so quickly i really appreciate it talk to you soon" | `thanks for getting back to me so quickly I really appreciate it talk to you soon` |
+| "hey sarah i wanted to follow up on the meeting about the robinson account"                        | `hey Sarah I wanted to follow up on the meeting about the Robinson account`                     |
+| "can you check if the env variable for the redis connection string is set"                         | `can you check if the env variable for the Redis connection string is set`                      |
+| "thanks for getting back to me so quickly i really appreciate it talk to you soon"                 | `thanks for getting back to me so quickly I really appreciate it talk to you soon`              |
 
 Whisper strips "uh" and "um" but misses stutters ("the the"), drops punctuation, and has inconsistent capitalization ("i" vs "I"). Every app gets the same raw output.
 
@@ -110,12 +113,12 @@ Whisper strips "uh" and "um" but misses stutters ("the the"), drops punctuation,
 
 Enables the local Qwen 2.5 language model to clean up Whisper's output. Fixes grammar, capitalization, punctuation, contractions, stutters, and sentence breaks.
 
-| You say | Whisper only | + Post-Processing |
-|---------|-------------|-------------------|
+| You say                                                                                            | Whisper only                                                                                    | + Post-Processing                                                                              |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | "yeah i was talking to jake about the uh the kubernetes deployment and he said its basically done" | `yeah I was talking to Jake about the the Kubernetes deployment and he said its basically done` | `Yeah, I was talking to Jake about the Kubernetes deployment and he said it's basically done.` |
-| "hey sarah i wanted to follow up on the meeting about the robinson account" | `hey Sarah I wanted to follow up on the meeting about the Robinson account` | `Hey Sarah, I wanted to follow up on the meeting about the Robinson account.` |
-| "thanks for getting back to me so quickly i really appreciate it talk to you soon" | `thanks for getting back to me so quickly I really appreciate it talk to you soon` | `Thanks for getting back to me so quickly. I really appreciate it. Talk to you soon.` |
-| "the the project is almost done i think we should uh deploy it tomorrow" | `the the project is almost done I think we should deploy it tomorrow` | `The project is almost done. I think we should deploy it tomorrow.` |
+| "hey sarah i wanted to follow up on the meeting about the robinson account"                        | `hey Sarah I wanted to follow up on the meeting about the Robinson account`                     | `Hey Sarah, I wanted to follow up on the meeting about the Robinson account.`                  |
+| "thanks for getting back to me so quickly i really appreciate it talk to you soon"                 | `thanks for getting back to me so quickly I really appreciate it talk to you soon`              | `Thanks for getting back to me so quickly. I really appreciate it. Talk to you soon.`          |
+| "the the project is almost done i think we should uh deploy it tomorrow"                           | `the the project is almost done I think we should deploy it tomorrow`                           | `The project is almost done. I think we should deploy it tomorrow.`                            |
 
 Stutter ("the the") removed, contractions fixed ("its" to "it's"), sentence breaks added, proper punctuation and capitalization throughout. However, the same formal style is applied everywhere — a Discord message gets the same treatment as an email.
 
@@ -126,20 +129,20 @@ OCR captures your active window during recording. Two things improve:
 1. **Name accuracy**: Proper nouns visible on screen (colleague names, project names, technical terms) are fed to Whisper as vocabulary hints, so it spells them correctly
 2. **App-aware formatting**: The post-processing prompt changes based on what app you're in
 
-| App type | What changes |
-|----------|-------------|
+| App type                         | What changes                                                                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Chat** (Discord, Slack, Teams) | Keeps slang (lol, lmao, tbh, ngl), preserves "like", lowercase start, no trailing period, keeps casual emphasis (yeah yeah, fr fr), preserves informal contractions (tryna, gonna, wanna) |
-| **Email** (Outlook, Gmail) | Professional tone, complete sentences, proper greetings preserved |
-| **Code** (VS Code, PyCharm) | Preserves camelCase, snake_case, technical terms, file extensions |
-| **Terminal** (PowerShell, cmd) | Preserves command names, flags, paths, technical terms |
-| **Document** (Word, Notion) | Well-structured sentences, breaks run-on speech into clear paragraphs |
+| **Email** (Outlook, Gmail)       | Professional tone, complete sentences, proper greetings preserved                                                                                                                         |
+| **Code** (VS Code, PyCharm)      | Preserves camelCase, snake_case, technical terms, file extensions                                                                                                                         |
+| **Terminal** (PowerShell, cmd)   | Preserves command names, flags, paths, technical terms                                                                                                                                    |
+| **Document** (Word, Notion)      | Well-structured sentences, breaks run-on speech into clear paragraphs                                                                                                                     |
 
 Example — same sentence, different apps:
 
-| You say | Post-Processing only | + OSR in Discord (Chat) | + OSR in Outlook (Email) |
-|---------|---------------------|------------------------|--------------------------|
-| "yeah ngl i think we should just push it to tomorrow tbh" | `Yeah, I think we should just push it to tomorrow.` | `yeah ngl I think we should just push it to tomorrow tbh` | `Yeah, I think we should just push it to tomorrow.` |
-| "hey can you send me that report when you get a chance" | `Hey, can you send me that report when you get a chance?` | `hey can you send me that report when you get a chance?` | `Hey, can you send me that report when you get a chance?` |
+| You say                                                   | Post-Processing only                                      | + OSR in Discord (Chat)                                   | + OSR in Outlook (Email)                                  |
+| --------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
+| "yeah ngl i think we should just push it to tomorrow tbh" | `Yeah, I think we should just push it to tomorrow.`       | `yeah ngl I think we should just push it to tomorrow tbh` | `Yeah, I think we should just push it to tomorrow.`       |
+| "hey can you send me that report when you get a chance"   | `Hey, can you send me that report when you get a chance?` | `hey can you send me that report when you get a chance?`  | `Hey, can you send me that report when you get a chance?` |
 
 The Chat prompt keeps the message casual — slang stays, lowercase start, no unnecessary period. The Email prompt keeps it professional. Without OSR, everything gets the same generic treatment.
 
@@ -152,23 +155,23 @@ Builds persistent per-app profiles that improve over time. Two things are added 
 1. **Vocabulary from past sessions**: Names and terms you've encountered before in an app are used as Whisper hints even when they aren't visible on the current screen. If "Priya Raghavan" appeared in Slack last week, the learning engine remembers and hints it for future transcriptions in Slack
 2. **Style adaptation**: After 3+ sessions in an app, the engine learns communication patterns (formality level, punctuation habits, capitalization style) and adjusts the post-processing prompt to match
 
-| Feature | OSR only | + Self-Learning |
-|---------|---------|-----------------|
-| Vocabulary hints | Only names visible on screen right now | Names from screen + all names seen in this app before |
-| Style prompt | Fixed per app type | Adapts to observed patterns (casual vs formal, punctuation density, etc.) |
-| Overlay badge | Generic type ("Chat", "Email") | Specific app name ("Discord", "Outlook") |
-| Persistence | None — starts fresh each session | Profiles saved to disk, improve across sessions |
+| Feature          | OSR only                               | + Self-Learning                                                           |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| Vocabulary hints | Only names visible on screen right now | Names from screen + all names seen in this app before                     |
+| Style prompt     | Fixed per app type                     | Adapts to observed patterns (casual vs formal, punctuation density, etc.) |
+| Overlay badge    | Generic type ("Chat", "Email")         | Specific app name ("Discord", "Outlook")                                  |
+| Persistence      | None — starts fresh each session       | Profiles saved to disk, improve across sessions                           |
 
 **Practical example**: You use Slack daily with teammates named "Dmitri", "Xiaowen", and "Kayleigh". After a few sessions with self-learning on, these names are in your Slack vocabulary profile. Even when none of them are visible on screen, Whisper gets them as hints and spells them correctly. Without self-learning, Whisper would only get hints for names currently visible on the screen.
 
 #### Summary
 
-| Layer | What it adds | Requires |
-|-------|-------------|----------|
-| **Whisper only** | Raw speech-to-text | Nothing |
+| Layer                 | What it adds                                                           | Requires                          |
+| --------------------- | ---------------------------------------------------------------------- | --------------------------------- |
+| **Whisper only**      | Raw speech-to-text                                                     | Nothing                           |
 | **+ Post-Processing** | Grammar, punctuation, capitalization, stutter removal, sentence breaks | Qwen 2.5 model (~1.1 GB download) |
-| **+ OSR** | App-aware formatting, name accuracy from screen | Post-Processing |
-| **+ Self-Learning** | Persistent vocabulary, style adaptation, improves over time | OSR |
+| **+ OSR**             | App-aware formatting, name accuracy from screen                        | Post-Processing                   |
+| **+ Self-Learning**   | Persistent vocabulary, style adaptation, improves over time            | OSR                               |
 
 ## Troubleshooting
 
@@ -219,21 +222,26 @@ MIT License
 ## Changelog
 
 ### v3.1.6
+
 - **Fix: auto-update applies but version unchanged (infinite update loop)** — The update batch script used `xcopy` to copy new files over old, but xcopy doesn't delete files that no longer exist. Both old and new `resonance-*.dist-info/` directories coexisted in `_internal/`, and `importlib.metadata.version()` found the old version first alphabetically. The app still thought it was on the old version and offered the update again in a loop. Fixed by deleting all old `resonance-*.dist-info/` directories before copying new files
 
 ### v3.1.5
+
 - Auto-updater test release
 
 ### v3.1.4
+
 - **Fix: worker thread callbacks not running on main thread** — `QueuedConnection` on plain Python functions doesn't work in PySide6 (no receiver QObject for thread dispatch). All worker signal connections now relay through QObject signals: worker → VTTApplication relay signal → callback. This guarantees callbacks run on the main GUI thread. Fixes update toast invisible, settings crash on Check for Updates, and post-download startup toast missing
 - **Fix: auto-update not applying** — The update batch script was created inside the app directory (visible clutter) and launched with `DETACHED_PROCESS` which silently failed on some systems. Now extracts to system temp, writes batch to system temp, uses `CREATE_NEW_PROCESS_GROUP` for reliable subprocess launch, and includes diagnostic logging in the batch script
 
 ### v3.1.3
+
 - **Fix: update toast not appearing** — Auto-update check found new versions but the toast never showed. Signal callbacks from worker threads to plain Python functions used `AutoConnection`, which defaults to `DirectConnection` (runs on worker thread). Qt widgets created/modified from non-GUI threads silently fail. Fixed by using explicit `QueuedConnection` for all update worker signals
 - **Fix: "Check for Updates" crash in Settings** — Clicking the button found the update but then crashed the app. Same root cause — the callback modified GUI widgets from the worker thread, causing a segfault. Fixed with `QueuedConnection`
 - **Fix: post-processor answering questions instead of cleaning them** — The question-answer hallucination guard failed when input started with filler words containing punctuation (e.g., "Okay, how does it look?"). The filler stripping compared `"okay,"` against `"okay"` and didn't match, so the question word "how" was never reached and the guard was skipped. Fixed by stripping punctuation before filler comparison. Also added explicit `?` detection so any input containing a question mark triggers the guard
 
 ### v3.1.2
+
 - **Fix: model download crash in EXE** — PyInstaller windowed mode sets `sys.stderr` to `None`, causing `tqdm`/`huggingface_hub` to crash with "NoneType has no attribute 'write'" when downloading models from Settings. Fixed by redirecting to devnull
 - **Fix: crash on cancelling model download** — Closing or cancelling a download dialog while `snapshot_download()` was running would crash the app. Worker signals are now disconnected before cleanup, and stuck threads are safely detached
 - **Fix: model combo not reverting on failed download** — After a failed download, the dropdown stayed on the failed model causing repeated download attempts on Save. Now reverts to the previously saved model
@@ -243,6 +251,7 @@ MIT License
 - **Fix: SSL DLL mismatch in EXE** — PyInstaller picked up PySide6's OpenSSL DLLs instead of Python's, causing `_ssl` import failures on machines without Python. Spec now force-bundles Python's own `libssl`/`libcrypto` DLLs
 
 ### v3.1.1
+
 - **Portable EXE**: Distributable as a single folder — extract the ZIP, double-click `Resonance.exe`, no Python or installer required. All data (models, config, logs) stored relative to the app directory
 - **Auto-updater**: Checks GitHub Releases 8 seconds after launch. Shows an interactive toast with Yes/No (auto-dismisses after 10s). On accept, downloads the update, writes a batch script that restarts the app with the new version. Also adds a "Check for Updates" button and version display in Settings
 - **Download auto-recovery**: Detects and cleans up partially downloaded models (`.incomplete` blobs or missing `model.bin`) on startup and before retries, so interrupted downloads no longer cause cryptic errors
@@ -250,10 +259,12 @@ MIT License
 - **packaging dependency**: Added `packaging>=23.0` for semantic version comparison in the updater
 
 ### v3.0.1
+
 - **Self-learning pipeline wiring**: Learned vocabulary from past sessions is now merged with OCR proper nouns and fed to Whisper as vocabulary hints. Style adaptation hints are appended to the post-processing system prompt. Previously, self-learning only observed and recorded data — now it actively improves transcription accuracy
 - **Feature Layers documentation**: Added a detailed section to README showing concrete before/after examples for each feature level (Whisper only → Post-Processing → OSR → Self-Learning)
 
 ### v3.0.0
+
 - **On-Screen Recognition (OSR)**: OCR captures the active window during recording to extract proper nouns as Whisper vocabulary hints and detect app type (chat, email, code, terminal, document) for format-specific post-processing prompts
 - **Self-learning recognition**: Passively builds per-app profiles over time — learns vocabulary, communication style (message length, capitalization, punctuation, formality), and app types with increasing confidence. Profiles persist across sessions in a separate JSON store
 - **App detection badges**: During typing, shows detected app context above the transcription pill — generic type ("Chat", "Email") with OSR only, specific app name ("Discord", "Outlook") with self-learning enabled. Hidden for general/unknown apps
@@ -266,9 +277,11 @@ MIT License
 - **Larger typing indicator**: "Text Entered" and "Typing" pill enlarged with bigger text for better visibility
 
 ### v2.2.1
+
 - **Bug report button**: Settings dialog includes a "Report Bug..." button that opens a pre-filled GitHub issue with system info and recent logs
 
 ### v2.2.0
+
 - **Scrollable settings dialog**: Settings now scroll vertically on small screens with fixed Save/Cancel buttons at bottom
 - **Startup model download**: Automatically downloads the speech model on first launch with animated progress toast; hotkey is disabled until download completes
 - **Default model changed**: New installations default to Balanced (base, ~140 MB) instead of Accurate (small, ~500 MB) for faster first-run
@@ -277,6 +290,7 @@ MIT License
 - **Improved scrollbar styling**: Thinner, transparent scrollbar that blends with the dark theme
 
 ### v2.1.0
+
 - **AI post-processing**: Local Qwen 2.5 model cleans up grammar, punctuation, capitalization, contractions, quotations, sentence breaks, filler words, and stutters
 - **Recording overlay badges**: Shows active features (Post-Processing: ON) above the recording pill
 - **Startup toast**: Displays model, post-processing status, and entry method on launch
@@ -285,6 +299,7 @@ MIT License
 - **Usage statistics**: Dashboard with 8 stat cards (words dictated, transcriptions, time saved, avg WPM, and more)
 
 ### v2.0.0
+
 - Dark theme with rounded frameless dialogs
 - Model download progress UI in settings
 - Recording overlay with live waveform visualization

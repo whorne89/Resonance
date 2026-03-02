@@ -1,8 +1,8 @@
 """
 Sound effects for Resonance.
-Generates short tones as WAV files and plays via Windows native audio API.
-Uses SND_FILENAME | SND_ASYNC for reliable non-blocking playback that
-doesn't conflict with sounddevice recording.
+Generates short tones as WAV files and plays via cross-platform audio API.
+Uses simpleaudio for reliable non-blocking playback that doesn't conflict
+with sounddevice recording.
 
 Custom sounds: Drop your own start.wav / stop.wav into .resonance/sounds/
 to override the generated defaults.
@@ -11,7 +11,7 @@ to override the generated defaults.
 import os
 import struct
 import numpy as np
-import winsound
+import simpleaudio as sa
 
 from utils.logger import get_logger
 from utils.resource_path import get_app_data_path, get_resource_path
@@ -138,19 +138,17 @@ class SoundEffects:
     def play_start_tone(self):
         """Play chime (recording started). Non-blocking."""
         try:
-            winsound.PlaySound(
-                self._start_path,
-                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT
-            )
+            wave_obj = sa.WaveObject.from_wave_file(self._start_path)
+            play_obj = wave_obj.play()
+            # Don't wait — let it play asynchronously
         except Exception as e:
             self.logger.warning(f"Sound playback failed: {e}")
 
     def play_stop_tone(self):
         """Play chime (recording stopped). Non-blocking."""
         try:
-            winsound.PlaySound(
-                self._stop_path,
-                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT
-            )
+            wave_obj = sa.WaveObject.from_wave_file(self._stop_path)
+            play_obj = wave_obj.play()
+            # Don't wait — let it play asynchronously
         except Exception as e:
             self.logger.warning(f"Sound playback failed: {e}")

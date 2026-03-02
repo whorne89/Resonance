@@ -1,11 +1,9 @@
 """
 Screen context module for OCR-based awareness.
-Captures the active window, extracts text via Windows native OCR,
+Captures the active window, extracts text via cross-platform OCR,
 detects the app type, and extracts proper nouns for Whisper hints.
 """
 
-import ctypes
-import ctypes.wintypes
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -509,25 +507,26 @@ class ScreenContextEngine:
     # ── Window capture ───────────────────────────────────────────────
 
     def _get_foreground_window(self):
-        """Get the foreground window title and bounding rect."""
-        user32 = ctypes.windll.user32
+        """Get the foreground window title and bounding rect (cross-platform using pywinctl)."""
+        try:
+            import pywinctl
 
-        hwnd = user32.GetForegroundWindow()
-        if not hwnd:
+            # Get the active window
+            active_window = pywinctl.getActiveWindow()
+            if not active_window:
+                return "", (0, 0, 0, 0)
+
+            # Get title
+            title = active_window.title
+
+            # Get bounding box (left, top, width, height)
+            bbox = active_window.box
+            x, y, w, h = bbox.left, bbox.top, bbox.width, bbox.height
+
+            return title, (x, y, w, h)
+        except Exception as e:
+            self.logger.warning(f"OCR: failed to get active window: {e}")
             return "", (0, 0, 0, 0)
-
-        # Get title
-        length = user32.GetWindowTextLengthW(hwnd)
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        title = buf.value
-
-        # Get rect
-        rect = ctypes.wintypes.RECT()
-        user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        x, y, w, h = rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
-
-        return title, (x, y, w, h)
 
     def _capture_window(self, rect):
         """Capture a screenshot of the given window region.
@@ -537,12 +536,18 @@ class ScreenContextEngine:
         try:
             import mss
             from PIL import Image
+            import numpy as np
+            
             x, y, w, h = rect
             monitor = {"left": x, "top": y, "width": w, "height": h}
             with mss.mss() as sct:
                 screenshot = sct.grab(monitor)
-                # mss gives BGRA; convert to RGB for PIL
-                img = Image.frombytes('RGBA', (screenshot.width, screenshot.height), screenshot.rgb)
+                # Convert mss screenshot to numpy array, then to PIL Image
+                # mss gives BGRA format
+                img_array = np.array(screenshot)
+                # Convert BGRA to RGB
+                img_rgb = img_array[:, :, [2, 1, 0]]  # Swap B and R channels
+                img = Image.fromarray(img_rgb)
                 return img
         except Exception as e:
             self.logger.warning(f"OCR: screenshot failed: {e}")

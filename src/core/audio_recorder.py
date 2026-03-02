@@ -22,7 +22,8 @@ class AudioRecorder:
             sample_rate: Sample rate in Hz (16000 is Whisper's native rate)
             channels: Number of audio channels (1 for mono, 2 for stereo)
         """
-        self.sample_rate = sample_rate
+        self.target_sample_rate = sample_rate  # Target rate for Whisper
+        self.actual_sample_rate = sample_rate  # Actual device sample rate
         self.channels = channels
         self.audio_queue = queue.Queue()
         self.recording = False
@@ -30,6 +31,11 @@ class AudioRecorder:
         self.device = None  # None = use default device
         self.logger = get_logger()
         self.current_rms = 0.0
+
+    @property
+    def sample_rate(self):
+        """Backward compatibility property for sample_rate."""
+        return self.target_sample_rate
 
     def set_device(self, device_index):
         """
@@ -104,18 +110,39 @@ class AudioRecorder:
                 self.audio_queue.put(indata.copy())
                 self.current_rms = float(np.sqrt(np.mean(indata ** 2)))
 
-        try:
-            self.stream = sd.InputStream(
-                device=self.device,
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                callback=callback,
-                dtype='float32'
-            )
-            self.stream.start()
-        except Exception as e:
-            self.recording = False
-            raise Exception(f"Failed to start audio recording: {e}")
+        # Try sample rates in order: target (16kHz), then fallbacks
+        sample_rates = [self.target_sample_rate, 48000, 44100, 32000, 22050]
+        last_error = None
+        
+        for rate in sample_rates:
+            try:
+                self.stream = sd.InputStream(
+                    device=self.device,
+                    samplerate=rate,
+                    channels=self.channels,
+                    callback=callback,
+                    dtype='float32'
+                )
+                self.stream.start()
+                self.actual_sample_rate = rate
+                if rate != self.target_sample_rate:
+                    self.logger.info(
+                        f"Audio: using {rate}Hz (device doesn't support {self.target_sample_rate}Hz)"
+                    )
+                return  # Success!
+            except Exception as e:
+                last_error = e
+                if self.stream:
+                    try:
+                        self.stream.close()
+                    except:
+                        pass
+                    self.stream = None
+                continue
+        
+        # All rates failed
+        self.recording = False
+        raise Exception(f"Failed to start audio recording: {last_error}")
 
     def stop_recording(self):
         """
@@ -154,6 +181,10 @@ class AudioRecorder:
             if audio_data.ndim > 1:
                 audio_data = audio_data.flatten()
 
+            # Resample to target rate if needed
+            if self.actual_sample_rate != self.target_sample_rate:
+                audio_data = self._resample(audio_data, self.actual_sample_rate, self.target_sample_rate)
+
             return audio_data
 
         return None
@@ -161,6 +192,23 @@ class AudioRecorder:
     def is_recording(self):
         """Check if currently recording."""
         return self.recording
+
+    def _resample(self, audio, from_rate, to_rate):
+        """Resample audio from one sample rate to another using scipy."""
+        try:
+            from scipy import signal
+            # Calculate new length
+            num_samples = int(len(audio) * to_rate / from_rate)
+            # Use scipy.signal.resample for high-quality resampling
+            resampled = signal.resample(audio, num_samples)
+            return resampled.astype(np.float32)
+        except ImportError:
+            # Fallback: simple linear interpolation if scipy not available
+            self.logger.warning("scipy not available, using basic resampling")
+            ratio = to_rate / from_rate
+            new_length = int(len(audio) * ratio)
+            indices = np.linspace(0, len(audio) - 1, new_length)
+            return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
 
     def get_default_device(self):
         """
