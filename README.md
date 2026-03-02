@@ -218,6 +218,10 @@ MIT License
 
 ## Changelog
 
+### v3.0.1
+- **Self-learning pipeline wiring**: Learned vocabulary from past sessions is now merged with OCR proper nouns and fed to Whisper as vocabulary hints. Style adaptation hints are appended to the post-processing system prompt. Previously, self-learning only observed and recorded data — now it actively improves transcription accuracy
+- **Feature Layers documentation**: Added a detailed section to README showing concrete before/after examples for each feature level (Whisper only → Post-Processing → OSR → Self-Learning)
+
 ### v3.0.0
 - **On-Screen Recognition (OSR)**: OCR captures the active window during recording to extract proper nouns as Whisper vocabulary hints and detect app type (chat, email, code, terminal, document) for format-specific post-processing prompts
 - **Self-learning recognition**: Passively builds per-app profiles over time — learns vocabulary, communication style (message length, capitalization, punctuation, formality), and app types with increasing confidence. Profiles persist across sessions in a separate JSON store
