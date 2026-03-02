@@ -7,6 +7,8 @@ detects the app type, and extracts proper nouns for Whisper hints.
 from dataclasses import dataclass, field
 from enum import Enum
 
+from paddleocr import PaddleOCR
+
 from utils.logger import get_logger
 
 
@@ -470,6 +472,21 @@ class ScreenContextEngine:
 
     def __init__(self):
         self.logger = get_logger()
+        # Initialize PaddleOCR once at startup (thread-safe, downloads models on first run)
+        try:
+            self.logger.info("Initializing PaddleOCR (first run downloads ~100MB models)...")
+            # Disable GPU and OneDNN to avoid conflicts with CTranslate2
+            self.ocr = PaddleOCR(
+                use_angle_cls=True, 
+                lang='en',
+                use_gpu=False,
+                enable_mkldnn=False,  # Disable OneDNN/MKL-DNN (conflicts with CTranslate2)
+                show_log=False  # Suppress verbose paddle logs
+            )
+            self.logger.info("PaddleOCR initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize PaddleOCR: {e}")
+            self.ocr = None
 
     def capture(self):
         """Run the full OCR pipeline. Returns ScreenContext or None on failure."""
@@ -556,13 +573,23 @@ class ScreenContextEngine:
     # ── OCR ──────────────────────────────────────────────────────────
 
     def _extract_text(self, img):
-        """Run OCR on screenshot using PaddleOCR."""
+        """Run OCR on screenshot using PaddleOCR.
+        
+        Args:
+            img: PIL Image object
+        """
         try:
-            from paddleocr import PaddleOCR
-
-            # Initialize PaddleOCR (models cache locally after first run)
-            ocr = PaddleOCR(use_angle_cls=True, lang='en')
-            result = ocr.ocr(img, cls=True)
+            import numpy as np
+            
+            if self.ocr is None:
+                self.logger.warning("OCR engine not initialized")
+                return ""
+            
+            # Convert PIL Image to numpy array (PaddleOCR requires numpy or str path)
+            img_array = np.array(img)
+            
+            # Run OCR without cls parameter (not supported in newer versions)
+            result = self.ocr.ocr(img_array)
 
             # Extract text from results: each line is [bbox, [text, confidence]]
             # Group by y-coordinate to reconstruct lines

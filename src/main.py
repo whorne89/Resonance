@@ -5,6 +5,7 @@ Main entry point that orchestrates all components.
 
 import os
 import sys
+import traceback
 
 # PyInstaller windowed mode (console=False) sets sys.stdout/stderr to None.
 # Libraries like huggingface_hub use tqdm which calls sys.stderr.write(),
@@ -414,12 +415,26 @@ class VTTApplication(QObject):
                 self.debug_manager.start_session()
 
             # Play start tone before recording to avoid capturing it
-            self.sound_effects.play_start_tone()
+            try:
+                self.logger.info("Playing start tone...")
+                self.sound_effects.play_start_tone()
+                self.logger.info("Start tone played successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to play start tone: {e}")
+                # Continue even if sound fails
 
-            self.audio_recorder.start_recording()
+            try:
+                self.logger.info("Starting audio recording...")
+                self.audio_recorder.start_recording()
+                self.logger.info("Audio recording started successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to start audio recording: {e}")
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                raise  # Re-raise to hit outer exception handler
 
             # Fire OCR capture in background (non-blocking, runs during recording)
             if self.screen_context:
+                self.logger.info("Starting OCR capture thread...")
                 def _capture_ocr():
                     try:
                         self._current_ocr_context = self.screen_context.capture()
@@ -447,10 +462,13 @@ class VTTApplication(QObject):
                     self.debug_panel.on_ocr_skipped()
 
             # Update UI
+            self.logger.info("Updating tray icon state...")
             if self.tray_icon:
                 self.tray_icon.set_recording_state()
+            self.logger.info("Showing recording overlay...")
             if self.overlay:
                 self.overlay.show_recording()
+            self.logger.info("on_hotkey_press completed successfully")
 
         except Exception as e:
             self.logger.error(f"Failed to start recording: {e}")
@@ -957,6 +975,17 @@ def main():
     # Create application controller
     vtt_app = VTTApplication()
 
+    # Set up global exception hook to catch uncaught exceptions from any thread
+    def handle_exception(exctype, value, tb):
+        """Handle uncaught exceptions, especially from Qt event handlers."""
+        error_msg = f"{exctype.__name__}: {value}\n{''.join(traceback.format_tb(tb))}"
+        try:
+            vtt_app.logger.error(f"Uncaught exception: {error_msg}")
+        except Exception:
+            print(f"ERROR: {error_msg}", file=sys.stderr)
+
+    sys.excepthook = handle_exception
+
     # Create recording overlay
     overlay = RecordingOverlay()
     overlay.set_audio_recorder(vtt_app.audio_recorder)
@@ -1193,8 +1222,17 @@ def main():
 
     QTimer.singleShot(8000, _start_update_check)
 
-    # Run application
-    sys.exit(app.exec())
+    # Run application with exception handling
+    try:
+        sys.exit(app.exec())
+    except Exception as e:
+        # Log any uncaught exceptions before exiting
+        try:
+            vtt_app.logger.error(f"Uncaught exception in app.exec(): {e}")
+            vtt_app.logger.error(traceback.format_exc())
+        except Exception:
+            pass  # Even logging failed, just exit
+        sys.exit(1)
 
 
 if __name__ == "__main__":

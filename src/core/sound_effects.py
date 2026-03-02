@@ -4,12 +4,16 @@ Generates short tones as WAV files and plays via cross-platform audio API.
 Uses simpleaudio for reliable non-blocking playback that doesn't conflict
 with sounddevice recording.
 
+NOTE: simpleaudio segfaults on some Linux systems. Sound effects are disabled
+on Linux as a workaround until we migrate to a more stable backend.
+
 Custom sounds: Drop your own start.wav / stop.wav into .resonance/sounds/
 to override the generated defaults.
 """
 
 import os
 import struct
+import sys
 import numpy as np
 import simpleaudio as sa
 
@@ -137,6 +141,9 @@ class SoundEffects:
 
     def play_start_tone(self):
         """Play chime (recording started). Non-blocking."""
+        # Skip sound effects on Linux (simpleaudio segfaults on some systems)
+        if sys.platform.startswith('linux'):
+            return
         try:
             wave_obj = sa.WaveObject.from_wave_file(self._start_path)
             play_obj = wave_obj.play()
@@ -146,6 +153,9 @@ class SoundEffects:
 
     def play_stop_tone(self):
         """Play chime (recording stopped). Non-blocking."""
+        # Skip sound effects on Linux (simpleaudio segfaults on some systems)
+        if sys.platform.startswith('linux'):
+            return
         try:
             wave_obj = sa.WaveObject.from_wave_file(self._stop_path)
             play_obj = wave_obj.play()
