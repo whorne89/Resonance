@@ -855,8 +855,10 @@ def main():
         load_thread.start()
     else:
         # Normal startup — show info toast
+        vtt_app.logger.info("Model already downloaded, showing startup toast")
         startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
         tray_icon.show_message("Service Started", startup_msg, details=_build_startup_details())
+        vtt_app.logger.info("Startup toast shown")
 
     # --- Auto-update check (8s after launch) ---
     def _start_update_check():
