@@ -9,7 +9,19 @@ Output:
     dist/Resonance/Resonance.exe
 """
 
+import os
+import sysconfig
 from PyInstaller.utils.hooks import collect_all, copy_metadata
+
+# Force-bundle the correct OpenSSL DLLs from Python's own directory.
+# Without this, PyInstaller may pick up mismatched versions from PySide6,
+# causing "The specified procedure could not be found" on _ssl import.
+_python_dll_dir = os.path.join(os.path.dirname(sysconfig.get_path('stdlib')), 'DLLs')
+ssl_binaries = []
+for _dll in ('libssl-3-x64.dll', 'libcrypto-3-x64.dll', '_ssl.pyd'):
+    _path = os.path.join(_python_dll_dir, _dll)
+    if os.path.isfile(_path):
+        ssl_binaries.append((_path, '.'))
 
 # Collect native DLLs and data for faster-whisper / CTranslate2
 fw_datas, fw_binaries, fw_hiddenimports = collect_all('faster_whisper')
@@ -21,7 +33,7 @@ meta_datas = copy_metadata('resonance')
 a = Analysis(
     ['src/main.py'],
     pathex=['src'],
-    binaries=fw_binaries + ct_binaries,
+    binaries=ssl_binaries + fw_binaries + ct_binaries,
     datas=[
         ('src/resources/icons/', 'resources/icons/'),
     ] + fw_datas + ct_datas + meta_datas,
