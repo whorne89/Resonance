@@ -218,6 +218,9 @@ MIT License
 
 ## Changelog
 
+### v3.1.4
+- Auto-updater test release — no functional changes from v3.1.3
+
 ### v3.1.3
 - **Fix: update toast not appearing** — Auto-update check found new versions but the toast never showed. Signal callbacks from worker threads to plain Python functions used `AutoConnection`, which defaults to `DirectConnection` (runs on worker thread). Qt widgets created/modified from non-GUI threads silently fail. Fixed by using explicit `QueuedConnection` for all update worker signals
 - **Fix: "Check for Updates" crash in Settings** — Clicking the button found the update but then crashed the app. Same root cause — the callback modified GUI widgets from the worker thread, causing a segfault. Fixed with `QueuedConnection`
