@@ -81,6 +81,11 @@ class RecordingOverlay(QWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
 
+        # Delayed-hide timer (cancellable, unlike QTimer.singleShot)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._begin_hide)
+
         # Fade animation
         self._fade_anim = None
 
@@ -148,13 +153,19 @@ class RecordingOverlay(QWidget):
 
     def show_recording(self):
         """Show overlay in recording state."""
-        self._position_on_screen()
+        # Cancel any pending hide from a previous transcription cycle
+        self._hide_timer.stop()
+        self._stop_fade()
+        # Set state BEFORE positioning so badge calculation uses recording state
         self._state = "recording"
+        # Clear stale badges from previous transcription
+        self._detected_app = None
+        self._accuracy = None
+        self._position_on_screen()
         self._bar_heights = [0.0] * self.BAR_COUNT
         self._target_heights = [0.0] * self.BAR_COUNT
         self._dot_opacity = 1.0
         self._dot_direction = -1
-        self._stop_fade()
         self.setWindowOpacity(1.0)
         self.show()
         self.raise_()
@@ -205,12 +216,18 @@ class RecordingOverlay(QWidget):
     def hide_overlay(self, delay_ms=0):
         """Fade out and hide the overlay after an optional delay."""
         if delay_ms > 0:
-            QTimer.singleShot(delay_ms, self._begin_hide)
+            self._hide_timer.start(delay_ms)
         else:
             self._begin_hide()
 
     def _begin_hide(self):
-        """Stop animations and fade out."""
+        """Stop animations and fade out.
+
+        Ignored if the overlay is in an active state (recording/processing)
+        to prevent a stale delayed-hide from killing a new session.
+        """
+        if self._state in ("recording", "processing"):
+            return
         self._timer.stop()
         self._state = "hidden"
         self._fade_out()

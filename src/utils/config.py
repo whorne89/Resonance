@@ -82,6 +82,9 @@ class ConfigManager:
         "learning": {
             "enabled": True
         },
+        "text_cleanup": {
+            "spoken_punctuation": True
+        },
         "statistics": {
             "total_words": 0,
             "total_transcriptions": 0,
@@ -315,6 +318,14 @@ class ConfigManager:
     def set_learning_enabled(self, enabled):
         """Set whether passive learning is enabled."""
         self.set("learning", "enabled", value=enabled)
+
+    def get_spoken_punctuation_enabled(self):
+        """Get whether spoken punctuation replacement is enabled."""
+        return self.get("text_cleanup", "spoken_punctuation", default=True)
+
+    def set_spoken_punctuation_enabled(self, enabled):
+        """Set whether spoken punctuation replacement is enabled."""
+        self.set("text_cleanup", "spoken_punctuation", value=enabled)
 
     def get_statistics(self):
         """Get the statistics dict."""

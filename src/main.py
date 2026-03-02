@@ -43,7 +43,8 @@ class TranscriptionWorker(QObject):
     error = Signal(str)  # Emits error message
 
     def __init__(self, transcriber, audio_data, post_processor=None, logger=None,
-                 ocr_context=None, learned_vocabulary=None, style_suffix=None):
+                 ocr_context=None, learned_vocabulary=None, style_suffix=None,
+                 spoken_punctuation=False):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
@@ -52,6 +53,7 @@ class TranscriptionWorker(QObject):
         self.ocr_context = ocr_context
         self.learned_vocabulary = learned_vocabulary or []
         self.style_suffix = style_suffix
+        self.spoken_punctuation = spoken_punctuation
 
     def run(self):
         """Run transcription."""
@@ -90,6 +92,25 @@ class TranscriptionWorker(QObject):
             text = self.transcriber.transcribe(self.audio_data, initial_prompt=initial_prompt)
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
+
+            # Clean comma spam from Whisper output (always on)
+            if text:
+                from core.text_cleaners import clean_comma_spam
+                original = text
+                text = clean_comma_spam(text)
+                if text != original and self.logger:
+                    self.logger.info(f"Comma spam cleaned: '{original}' -> '{text}'")
+
+            # Replace spoken punctuation (e.g., "slash" -> "/")
+            # Only in terminal/code contexts where symbols are expected
+            if text and self.spoken_punctuation and self.ocr_context:
+                from core.screen_context import AppType
+                if self.ocr_context.app_type in (AppType.CODE, AppType.TERMINAL):
+                    from core.text_cleaners import replace_spoken_punctuation
+                    original = text
+                    text = replace_spoken_punctuation(text)
+                    if text != original and self.logger:
+                        self.logger.info(f"Spoken punctuation: '{original}' -> '{text}'")
 
             # Guard: detect Whisper hallucinating from initial_prompt
             # If transcription is short and mostly contains OCR nouns, it's not real speech
@@ -363,6 +384,7 @@ class VTTApplication(QObject):
             ocr_context=self._current_ocr_context,
             learned_vocabulary=learned_vocabulary,
             style_suffix=style_suffix,
+            spoken_punctuation=self.config.get_spoken_punctuation_enabled(),
         )
 
         # Move worker to thread
