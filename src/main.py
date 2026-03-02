@@ -3,7 +3,17 @@ Resonance - Voice to Text Application
 Main entry point that orchestrates all components.
 """
 
+import os
 import sys
+
+# PyInstaller windowed mode (console=False) sets sys.stdout/stderr to None.
+# Libraries like huggingface_hub use tqdm which calls sys.stderr.write(),
+# crashing with "NoneType has no attribute 'write'". Redirect to devnull.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 import ctypes
 import threading
 from datetime import date
@@ -816,13 +826,11 @@ def main():
             tray_icon.show_message("Service Started", startup_msg, details=_build_startup_details())
 
         def on_model_loaded():
-            download_toast._anim_timer.stop()
-            download_toast._hold_timer.stop()
-            download_toast.hide()
+            download_toast.set_complete("Model downloaded!")
             vtt_app.setup_hotkey()
             load_thread.quit()
-            # Delay so the event loop processes the hide before showing the new toast
-            QTimer.singleShot(500, _show_post_download_toast)
+            # Wait for the set_complete toast to auto-dismiss (2s) + buffer
+            QTimer.singleShot(2800, _show_post_download_toast)
 
         def on_model_error(msg):
             download_toast._anim_timer.stop()

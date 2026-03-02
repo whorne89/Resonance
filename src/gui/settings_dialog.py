@@ -317,14 +317,34 @@ class ModelDownloadDialog(RoundedDialog):
         self.reject()
 
     def _cleanup(self):
+        self._timer.stop()
+        # Disconnect worker signals so they can't fire into a destroyed dialog
+        if self._worker:
+            try:
+                self._worker.finished.disconnect()
+                self._worker.error.disconnect()
+            except RuntimeError:
+                pass
         if self._thread:
             self._thread.quit()
-            self._thread.wait(2000)
+            if not self._thread.wait(3000):
+                # Thread didn't stop (blocking network call) — detach it
+                # so it can finish in the background without crashing
+                self._thread.finished.connect(self._thread.deleteLater)
+                if self._worker:
+                    self._thread.finished.connect(self._worker.deleteLater)
+                self._thread = None
+                self._worker = None
+                return
             self._thread.deleteLater()
             self._thread = None
         if self._worker:
             self._worker.deleteLater()
             self._worker = None
+
+    def reject(self):
+        self._cleanup()
+        super().reject()
 
     def closeEvent(self, event):
         self._cleanup()
@@ -441,14 +461,32 @@ class PostProcessingDownloadDialog(RoundedDialog):
         self.reject()
 
     def _cleanup(self):
+        self._tick_timer.stop()
+        if self._worker:
+            try:
+                self._worker.finished.disconnect()
+                self._worker.error.disconnect()
+                self._worker.progress.disconnect()
+            except RuntimeError:
+                pass
         if self._thread:
             self._thread.quit()
-            self._thread.wait(2000)
+            if not self._thread.wait(3000):
+                self._thread.finished.connect(self._thread.deleteLater)
+                if self._worker:
+                    self._thread.finished.connect(self._worker.deleteLater)
+                self._thread = None
+                self._worker = None
+                return
             self._thread.deleteLater()
             self._thread = None
         if self._worker:
             self._worker.deleteLater()
             self._worker = None
+
+    def reject(self):
+        self._cleanup()
+        super().reject()
 
     def closeEvent(self, event):
         self._cleanup()
@@ -1414,6 +1452,10 @@ class SettingsDialog(RoundedDialog):
                     dlg.exec()
 
                     if not dlg.succeeded:
+                        # Revert combo to the previously saved model
+                        old_index = self.model_combo.findData(old_model)
+                        if old_index >= 0:
+                            self.model_combo.setCurrentIndex(old_index)
                         return
 
             # Download post-processing model if enabling for the first time

@@ -36,6 +36,7 @@ a = Analysis(
     binaries=ssl_binaries + fw_binaries + ct_binaries,
     datas=[
         ('src/resources/icons/', 'resources/icons/'),
+        ('src/resources/sounds/', 'resources/sounds/'),
     ] + fw_datas + ct_datas + meta_datas,
     hiddenimports=[
         'sounddevice',
