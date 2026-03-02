@@ -869,32 +869,37 @@ def main():
         thread.started.connect(worker.run)
 
         def _on_update_available(version_str, download_url, tag_name):
-            thread.quit()
-            from utils.resource_path import is_bundled
+            try:
+                vtt_app.logger.info(f"Update callback: {version_str}, showing toast")
+                thread.quit()
+                from utils.resource_path import is_bundled
 
-            toast = UpdateToast(version_str)
+                toast = UpdateToast(version_str)
 
-            def _on_accepted():
-                toast.hide()
-                if is_bundled():
-                    _download_and_apply(version_str, download_url, vtt_app)
-                else:
-                    from core.updater import UpdateChecker, UpdateInfo
-                    info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)
-                    msg = UpdateChecker.get_source_update_message(info)
-                    tray_icon.show_message("Update Available", msg)
+                def _on_accepted():
+                    toast.hide()
+                    if is_bundled():
+                        _download_and_apply(version_str, download_url, vtt_app)
+                    else:
+                        from core.updater import UpdateChecker, UpdateInfo
+                        info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)
+                        msg = UpdateChecker.get_source_update_message(info)
+                        tray_icon.show_message("Update Available", msg)
 
-            toast.accepted.connect(_on_accepted)
-            toast.show_toast()
+                toast.accepted.connect(_on_accepted)
+                toast.show_toast()
 
-            # Keep references alive
-            vtt_app._update_toast = toast
+                # Keep references alive
+                vtt_app._update_toast = toast
+                vtt_app.logger.info("Update toast shown successfully")
+            except Exception as e:
+                vtt_app.logger.error(f"Failed to show update toast: {e}")
 
         def _on_up_to_date():
             thread.quit()
 
-        worker.update_available.connect(_on_update_available)
-        worker.up_to_date.connect(_on_up_to_date)
+        worker.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
+        worker.up_to_date.connect(_on_up_to_date, Qt.ConnectionType.QueuedConnection)
 
         # Keep references alive
         vtt_app._update_thread = thread
@@ -961,9 +966,9 @@ def main():
             dl_thread.quit()
             status.setText(f"Download failed: {msg}")
 
-        dl_worker.progress.connect(_on_progress)
-        dl_worker.finished.connect(_on_finished)
-        dl_worker.error.connect(_on_error)
+        dl_worker.progress.connect(_on_progress, Qt.ConnectionType.QueuedConnection)
+        dl_worker.finished.connect(_on_finished, Qt.ConnectionType.QueuedConnection)
+        dl_worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
 
         # Keep references
         dlg._dl_thread = dl_thread

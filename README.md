@@ -218,6 +218,11 @@ MIT License
 
 ## Changelog
 
+### v3.1.3
+- **Fix: update toast not appearing** — Auto-update check found new versions but the toast never showed. Signal callbacks from worker threads to plain Python functions used `AutoConnection`, which defaults to `DirectConnection` (runs on worker thread). Qt widgets created/modified from non-GUI threads silently fail. Fixed by using explicit `QueuedConnection` for all update worker signals
+- **Fix: "Check for Updates" crash in Settings** — Clicking the button found the update but then crashed the app. Same root cause — the callback modified GUI widgets from the worker thread, causing a segfault. Fixed with `QueuedConnection`
+- **Fix: post-processor answering questions instead of cleaning them** — The question-answer hallucination guard failed when input started with filler words containing punctuation (e.g., "Okay, how does it look?"). The filler stripping compared `"okay,"` against `"okay"` and didn't match, so the question word "how" was never reached and the guard was skipped. Fixed by stripping punctuation before filler comparison. Also added explicit `?` detection so any input containing a question mark triggers the guard
+
 ### v3.1.2
 - **Fix: model download crash in EXE** — PyInstaller windowed mode sets `sys.stderr` to `None`, causing `tqdm`/`huggingface_hub` to crash with "NoneType has no attribute 'write'" when downloading models from Settings. Fixed by redirecting to devnull
 - **Fix: crash on cancelling model download** — Closing or cancelling a download dialog while `snapshot_download()` was running would crash the app. Worker signals are now disconnected before cleanup, and stuck threads are safely detached

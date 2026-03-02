@@ -322,10 +322,14 @@ class PostProcessor:
         filler_prefixes = {"um", "uh", "so", "like", "okay", "ok", "basically",
                            "alright", "well", "right"}
         words = text.lower().split()
-        while words and words[0] in filler_prefixes:
+        while words and words[0].strip(".,!?;:") in filler_prefixes:
             words.pop(0)
         text_stripped = " ".join(words)
-        if len(words) <= 20 and text_stripped.startswith(question_words):
+        input_is_question = (
+            text_stripped.startswith(question_words)
+            or "?" in text  # explicit question mark anywhere in input
+        )
+        if len(words) <= 20 and input_is_question:
             # Input was a question — output must also be a question (end with ?)
             # or at least start with the same question word
             first_word_in = text_stripped.split()[0]

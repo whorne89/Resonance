@@ -963,19 +963,22 @@ class SettingsDialog(RoundedDialog):
         thread.started.connect(worker.run)
 
         def _on_update(version_str, download_url, tag_name):
-            thread.quit()
-            self._update_check_btn.setEnabled(True)
-            self._update_status.setText(f"Resonance {version_str} is available!")
-            self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
-            self._pending_update_version = version_str
-            self._pending_update_url = download_url
+            try:
+                thread.quit()
+                self._update_check_btn.setEnabled(True)
+                self._update_status.setText(f"Resonance {version_str} is available!")
+                self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
+                self._pending_update_version = version_str
+                self._pending_update_url = download_url
 
-            from utils.resource_path import is_bundled
-            if is_bundled():
-                self._update_download_btn.show()
-            else:
-                self._update_source_hint.setText(f"Run: git pull && uv sync")
-                self._update_source_hint.show()
+                from utils.resource_path import is_bundled
+                if is_bundled():
+                    self._update_download_btn.show()
+                else:
+                    self._update_source_hint.setText(f"Run: git pull && uv sync")
+                    self._update_source_hint.show()
+            except Exception as e:
+                print(f"Update check callback error: {e}")
 
         def _on_up_to_date():
             thread.quit()
@@ -988,9 +991,9 @@ class SettingsDialog(RoundedDialog):
             self._update_check_btn.setEnabled(True)
             self._update_status.setText(f"Check failed: {msg}")
 
-        worker.update_available.connect(_on_update)
-        worker.up_to_date.connect(_on_up_to_date)
-        worker.error.connect(_on_error)
+        worker.update_available.connect(_on_update, Qt.ConnectionType.QueuedConnection)
+        worker.up_to_date.connect(_on_up_to_date, Qt.ConnectionType.QueuedConnection)
+        worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
 
         # Keep references
         self._update_check_thread = thread
@@ -1064,9 +1067,9 @@ class SettingsDialog(RoundedDialog):
             thread.quit()
             d_status.setText(f"Download failed: {msg}")
 
-        worker.progress.connect(_on_progress)
-        worker.finished.connect(_on_finished)
-        worker.error.connect(_on_error)
+        worker.progress.connect(_on_progress, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(_on_finished, Qt.ConnectionType.QueuedConnection)
+        worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
 
         dlg._dl_thread = thread
         dlg._dl_worker = worker
