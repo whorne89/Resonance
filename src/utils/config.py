@@ -68,7 +68,7 @@ class ConfigManager:
             "fuzzy_threshold": 0.75
         },
         "learning": {
-            "enabled": True
+            "enabled": False
         },
         "text_cleanup": {
             "spoken_punctuation": True

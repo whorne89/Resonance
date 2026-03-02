@@ -715,11 +715,11 @@ class VTTApplication(QObject):
         if not self.overlay:
             return
         features = []
-        if self.config.get_learning_enabled():
+        if self.learning_engine is not None:
             features.append("Learning OSR")
         elif self.screen_context is not None:
             features.append("Post-Processing OSR")
-        elif self.config.get_post_processing_enabled():
+        elif self.post_processor is not None:
             features.append("Post-Processing")
         self.overlay.set_features(features)
 
@@ -826,11 +826,15 @@ def main():
             tray_icon.show_message("Service Started", startup_msg, details=_build_startup_details())
 
         def on_model_loaded():
-            download_toast.set_complete("Model downloaded!")
+            download_toast._downloading = False
+            download_toast._anim_timer.stop()
+            download_toast._hold_timer.stop()
+            download_toast._stop_fade()
+            download_toast.setWindowOpacity(0.0)
+            download_toast.hide()
             vtt_app.setup_hotkey()
             load_thread.quit()
-            # Wait for the set_complete toast to auto-dismiss (2s) + buffer
-            QTimer.singleShot(2800, _show_post_download_toast)
+            QTimer.singleShot(300, _show_post_download_toast)
 
         def on_model_error(msg):
             download_toast._anim_timer.stop()

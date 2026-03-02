@@ -218,6 +218,15 @@ MIT License
 
 ## Changelog
 
+### v3.1.2
+- **Fix: model download crash in EXE** — PyInstaller windowed mode sets `sys.stderr` to `None`, causing `tqdm`/`huggingface_hub` to crash with "NoneType has no attribute 'write'" when downloading models from Settings. Fixed by redirecting to devnull
+- **Fix: crash on cancelling model download** — Closing or cancelling a download dialog while `snapshot_download()` was running would crash the app. Worker signals are now disconnected before cleanup, and stuck threads are safely detached
+- **Fix: model combo not reverting on failed download** — After a failed download, the dropdown stayed on the failed model causing repeated download attempts on Save. Now reverts to the previously saved model
+- **Fix: download toast stuck after first-run install** — The "Installing model" toast would not dismiss after the download completed. Now cleanly hides and shows the startup toast
+- **Fix: "Learning OSR" badge shown without dependencies** — The overlay badge checked the config flag (default: true) instead of the actual engine instance. Fresh installs showed "Learning OSR" even with post-processing and OSR off. Default changed to false and badge now checks engine state
+- **Fix: bundled sounds missing** — PyInstaller spec only bundled icons, not the custom piano tone WAV files. Added `src/resources/sounds/` to the build
+- **Fix: SSL DLL mismatch in EXE** — PyInstaller picked up PySide6's OpenSSL DLLs instead of Python's, causing `_ssl` import failures on machines without Python. Spec now force-bundles Python's own `libssl`/`libcrypto` DLLs
+
 ### v3.1.1
 - **Portable EXE**: Distributable as a single folder — extract the ZIP, double-click `Resonance.exe`, no Python or installer required. All data (models, config, logs) stored relative to the app directory
 - **Auto-updater**: Checks GitHub Releases 8 seconds after launch. Shows an interactive toast with Yes/No (auto-dismisses after 10s). On accept, downloads the update, writes a batch script that restarts the app with the new version. Also adds a "Check for Updates" button and version display in Settings
