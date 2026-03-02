@@ -219,7 +219,7 @@ MIT License
 ## Changelog
 
 ### v3.1.4
-- Auto-updater test release — no functional changes from v3.1.3
+- **Fix: worker thread callbacks not running on main thread** — `QueuedConnection` on plain Python functions doesn't work in PySide6 (no receiver QObject for thread dispatch). All worker signal connections now relay through QObject signals: worker → VTTApplication relay signal → callback. This guarantees callbacks run on the main GUI thread. Fixes update toast invisible, settings crash on Check for Updates, and post-download startup toast missing
 
 ### v3.1.3
 - **Fix: update toast not appearing** — Auto-update check found new versions but the toast never showed. Signal callbacks from worker threads to plain Python functions used `AutoConnection`, which defaults to `DirectConnection` (runs on worker thread). Qt widgets created/modified from non-GUI threads silently fail. Fixed by using explicit `QueuedConnection` for all update worker signals

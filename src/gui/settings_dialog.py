@@ -550,6 +550,86 @@ class _SettingsUpdateDownloadWorker(QObject):
         self.progress.emit(downloaded, total)
 
 
+class _UpdateDownloadDialog(RoundedDialog):
+    """Progress dialog for downloading an update.
+
+    All worker signal callbacks are bound methods on this QDialog,
+    so AutoConnection correctly dispatches them to the main thread.
+    """
+
+    def __init__(self, parent, version_str, download_url):
+        super().__init__(parent)
+        self._version_str = version_str
+        self._settings_dialog = parent
+
+        self.setWindowTitle("Updating Resonance")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+
+        self._status = QLabel(f"Downloading Resonance {version_str}...")
+        self._status.setStyleSheet("font-size: 12px;")
+        layout.addWidget(self._status)
+
+        self._bar = QProgressBar()
+        self._bar.setMinimum(0)
+        self._bar.setMaximum(100)
+        self._bar.setValue(0)
+        self._bar.setTextVisible(True)
+        self._bar.setFormat("%v%")
+        self._bar.setMinimumHeight(28)
+        layout.addWidget(self._bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+
+        # Background download thread
+        self._thread = QThread()
+        self._worker = _SettingsUpdateDownloadWorker(version_str, download_url)
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+
+        # Connect to bound methods — AutoConnection dispatches to main thread
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.error.connect(self._on_error)
+
+        self._thread.start()
+
+    def _on_progress(self, downloaded, total):
+        if total > 0:
+            pct = min(99, int(downloaded / total * 100))
+            self._bar.setValue(pct)
+            mb_done = downloaded / (1024 * 1024)
+            mb_total = total / (1024 * 1024)
+            self._status.setText(
+                f"Downloading Resonance {self._version_str}... "
+                f"{mb_done:.1f} / {mb_total:.1f} MB"
+            )
+
+    def _on_finished(self, path):
+        self._bar.setValue(100)
+        self._thread.quit()
+        self.accept()
+        from core.updater import UpdateChecker
+        checker = UpdateChecker()
+        if checker.apply_update(path):
+            self._settings_dialog.reject()
+            from PySide6.QtWidgets import QApplication
+            QApplication.quit()
+
+    def _on_error(self, msg):
+        self._thread.quit()
+        self._status.setText(f"Download failed: {msg}")
+
+
 class SettingsDialog(RoundedDialog):
     """Settings configuration dialog."""
 
@@ -962,44 +1042,50 @@ class SettingsDialog(RoundedDialog):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
-        def _on_update(version_str, download_url, tag_name):
-            try:
-                thread.quit()
-                self._update_check_btn.setEnabled(True)
-                self._update_status.setText(f"Resonance {version_str} is available!")
-                self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
-                self._pending_update_version = version_str
-                self._pending_update_url = download_url
-
-                from utils.resource_path import is_bundled
-                if is_bundled():
-                    self._update_download_btn.show()
-                else:
-                    self._update_source_hint.setText(f"Run: git pull && uv sync")
-                    self._update_source_hint.show()
-            except Exception as e:
-                print(f"Update check callback error: {e}")
-
-        def _on_up_to_date():
-            thread.quit()
-            self._update_check_btn.setEnabled(True)
-            self._update_status.setText("Up to date!")
-            self._update_status.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
-
-        def _on_error(msg):
-            thread.quit()
-            self._update_check_btn.setEnabled(True)
-            self._update_status.setText(f"Check failed: {msg}")
-
-        worker.update_available.connect(_on_update, Qt.ConnectionType.QueuedConnection)
-        worker.up_to_date.connect(_on_up_to_date, Qt.ConnectionType.QueuedConnection)
-        worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
+        # Connect to bound methods on self (a QWidget on the main thread).
+        # AutoConnection detects cross-thread and uses QueuedConnection,
+        # guaranteeing these run on the main thread.
+        worker.update_available.connect(self._on_update_check_found)
+        worker.up_to_date.connect(self._on_update_check_up_to_date)
+        worker.error.connect(self._on_update_check_error)
 
         # Keep references
         self._update_check_thread = thread
         self._update_check_worker = worker
 
         thread.start()
+
+    def _on_update_check_found(self, version_str, download_url, tag_name):
+        """Handle update found — runs on main thread via AutoConnection."""
+        if self._update_check_thread:
+            self._update_check_thread.quit()
+        self._update_check_btn.setEnabled(True)
+        self._update_status.setText(f"Resonance {version_str} is available!")
+        self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
+        self._pending_update_version = version_str
+        self._pending_update_url = download_url
+
+        from utils.resource_path import is_bundled
+        if is_bundled():
+            self._update_download_btn.show()
+        else:
+            self._update_source_hint.setText("Run: git pull && uv sync")
+            self._update_source_hint.show()
+
+    def _on_update_check_up_to_date(self):
+        """Handle up-to-date result — runs on main thread."""
+        if self._update_check_thread:
+            self._update_check_thread.quit()
+        self._update_check_btn.setEnabled(True)
+        self._update_status.setText("Up to date!")
+        self._update_status.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+    def _on_update_check_error(self, msg):
+        """Handle update check error — runs on main thread."""
+        if self._update_check_thread:
+            self._update_check_thread.quit()
+        self._update_check_btn.setEnabled(True)
+        self._update_status.setText(f"Check failed: {msg}")
 
     def _download_update(self):
         """Download and apply update via progress dialog."""
@@ -1009,72 +1095,8 @@ class SettingsDialog(RoundedDialog):
         version_str = self._pending_update_version
         download_url = self._pending_update_url
 
-        # Create progress dialog
-        dlg = RoundedDialog(self)
-        dlg.setWindowTitle("Updating Resonance")
-        dlg.setMinimumWidth(420)
-
-        d_layout = QVBoxLayout()
-        d_layout.setSpacing(12)
-        d_status = QLabel(f"Downloading Resonance {version_str}...")
-        d_status.setStyleSheet("font-size: 12px;")
-        d_layout.addWidget(d_status)
-
-        d_bar = QProgressBar()
-        d_bar.setMinimum(0)
-        d_bar.setMaximum(100)
-        d_bar.setValue(0)
-        d_bar.setTextVisible(True)
-        d_bar.setFormat("%v%")
-        d_bar.setMinimumHeight(28)
-        d_layout.addWidget(d_bar)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(dlg.reject)
-        btn_layout.addWidget(cancel_btn)
-        d_layout.addLayout(btn_layout)
-
-        dlg.setLayout(d_layout)
-
-        thread = QThread()
-        worker = _SettingsUpdateDownloadWorker(version_str, download_url)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-
-        def _on_progress(downloaded, total):
-            if total > 0:
-                pct = min(99, int(downloaded / total * 100))
-                d_bar.setValue(pct)
-                mb_done = downloaded / (1024 * 1024)
-                mb_total = total / (1024 * 1024)
-                d_status.setText(f"Downloading Resonance {version_str}... {mb_done:.1f} / {mb_total:.1f} MB")
-
-        def _on_finished(path):
-            d_bar.setValue(100)
-            thread.quit()
-            dlg.accept()
-            from core.updater import UpdateChecker
-            checker = UpdateChecker()
-            if checker.apply_update(path):
-                # Close settings dialog and quit app for restart
-                self.reject()
-                from PySide6.QtWidgets import QApplication
-                QApplication.quit()
-
-        def _on_error(msg):
-            thread.quit()
-            d_status.setText(f"Download failed: {msg}")
-
-        worker.progress.connect(_on_progress, Qt.ConnectionType.QueuedConnection)
-        worker.finished.connect(_on_finished, Qt.ConnectionType.QueuedConnection)
-        worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
-
-        dlg._dl_thread = thread
-        dlg._dl_worker = worker
-
-        thread.start()
+        # Create and run progress dialog (handles thread internally)
+        dlg = _UpdateDownloadDialog(self, version_str, download_url)
         dlg.exec()
 
     def create_bug_report_group(self):

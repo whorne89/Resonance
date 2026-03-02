@@ -230,6 +230,18 @@ class VTTApplication(QObject):
     _hotkey_pressed = Signal()
     _hotkey_released = Signal()
 
+    # Relay signals for worker threads → main thread marshaling.
+    # PySide6 QueuedConnection doesn't work for plain Python functions
+    # (no receiver QObject to determine target thread). Chain through
+    # these signals instead: worker signal → relay signal → callback.
+    _relay_model_loaded = Signal()
+    _relay_model_error = Signal(str)
+    _relay_update = Signal(str, str, str)     # version, url, tag
+    _relay_up_to_date = Signal()
+    _relay_dl_progress = Signal(int, int)     # downloaded, total
+    _relay_dl_finished = Signal(str)          # path
+    _relay_dl_error = Signal(str)
+
     def __init__(self):
         super().__init__()
 
@@ -844,8 +856,13 @@ def main():
             load_thread.quit()
             QTimer.singleShot(3000, download_toast.hide)
 
-        load_worker.finished.connect(on_model_loaded, Qt.ConnectionType.QueuedConnection)
-        load_worker.error.connect(on_model_error, Qt.ConnectionType.QueuedConnection)
+        # Relay through vtt_app (QObject on main thread) to guarantee
+        # callbacks run on the main thread. Direct QueuedConnection to
+        # plain functions doesn't work in PySide6.
+        load_worker.finished.connect(vtt_app._relay_model_loaded)
+        load_worker.error.connect(vtt_app._relay_model_error)
+        vtt_app._relay_model_loaded.connect(on_model_loaded)
+        vtt_app._relay_model_error.connect(on_model_error)
 
         # Keep references alive (prevent GC)
         vtt_app._load_thread = load_thread
@@ -900,8 +917,11 @@ def main():
         def _on_up_to_date():
             thread.quit()
 
-        worker.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
-        worker.up_to_date.connect(_on_up_to_date, Qt.ConnectionType.QueuedConnection)
+        # Relay through vtt_app to run callbacks on the main thread
+        worker.update_available.connect(vtt_app._relay_update)
+        worker.up_to_date.connect(vtt_app._relay_up_to_date)
+        vtt_app._relay_update.connect(_on_update_available)
+        vtt_app._relay_up_to_date.connect(_on_up_to_date)
 
         # Keep references alive
         vtt_app._update_thread = thread
@@ -968,9 +988,13 @@ def main():
             dl_thread.quit()
             status.setText(f"Download failed: {msg}")
 
-        dl_worker.progress.connect(_on_progress, Qt.ConnectionType.QueuedConnection)
-        dl_worker.finished.connect(_on_finished, Qt.ConnectionType.QueuedConnection)
-        dl_worker.error.connect(_on_error, Qt.ConnectionType.QueuedConnection)
+        # Relay through vtt_app to run callbacks on the main thread
+        dl_worker.progress.connect(vtt_app._relay_dl_progress)
+        dl_worker.finished.connect(vtt_app._relay_dl_finished)
+        dl_worker.error.connect(vtt_app._relay_dl_error)
+        vtt_app._relay_dl_progress.connect(_on_progress)
+        vtt_app._relay_dl_finished.connect(_on_finished)
+        vtt_app._relay_dl_error.connect(_on_error)
 
         # Keep references
         dlg._dl_thread = dl_thread
