@@ -844,8 +844,8 @@ def main():
             load_thread.quit()
             QTimer.singleShot(3000, download_toast.hide)
 
-        load_worker.finished.connect(on_model_loaded)
-        load_worker.error.connect(on_model_error)
+        load_worker.finished.connect(on_model_loaded, Qt.ConnectionType.QueuedConnection)
+        load_worker.error.connect(on_model_error, Qt.ConnectionType.QueuedConnection)
 
         # Keep references alive (prevent GC)
         vtt_app._load_thread = load_thread
