@@ -89,6 +89,87 @@ Right-click the system tray icon and select **Settings** to configure:
 6. Custom dictionary replacements are applied
 7. Text is typed into the currently focused window via clipboard paste or keyboard simulation
 
+### Feature Layers
+
+Each feature builds on the previous one. Here's what changes at each level, using real examples of what you'd get if you said the same thing out loud.
+
+#### Whisper Only (all features off)
+
+Raw transcription from Whisper. It catches most words accurately and strips obvious filler sounds (um, uh), but punctuation, capitalization, and grammar are inconsistent.
+
+| You say | You get |
+|---------|---------|
+| "yeah i was talking to jake about the uh the kubernetes deployment and he said its basically done" | `yeah I was talking to Jake about the the Kubernetes deployment and he said its basically done` |
+| "hey sarah i wanted to follow up on the meeting about the robinson account" | `hey Sarah I wanted to follow up on the meeting about the Robinson account` |
+| "can you check if the env variable for the redis connection string is set" | `can you check if the env variable for the Redis connection string is set` |
+| "thanks for getting back to me so quickly i really appreciate it talk to you soon" | `thanks for getting back to me so quickly I really appreciate it talk to you soon` |
+
+Whisper strips "uh" and "um" but misses stutters ("the the"), drops punctuation, and has inconsistent capitalization ("i" vs "I"). Every app gets the same raw output.
+
+#### + Post-Processing
+
+Enables the local Qwen 2.5 language model to clean up Whisper's output. Fixes grammar, capitalization, punctuation, contractions, stutters, and sentence breaks.
+
+| You say | Whisper only | + Post-Processing |
+|---------|-------------|-------------------|
+| "yeah i was talking to jake about the uh the kubernetes deployment and he said its basically done" | `yeah I was talking to Jake about the the Kubernetes deployment and he said its basically done` | `Yeah, I was talking to Jake about the Kubernetes deployment and he said it's basically done.` |
+| "hey sarah i wanted to follow up on the meeting about the robinson account" | `hey Sarah I wanted to follow up on the meeting about the Robinson account` | `Hey Sarah, I wanted to follow up on the meeting about the Robinson account.` |
+| "thanks for getting back to me so quickly i really appreciate it talk to you soon" | `thanks for getting back to me so quickly I really appreciate it talk to you soon` | `Thanks for getting back to me so quickly. I really appreciate it. Talk to you soon.` |
+| "the the project is almost done i think we should uh deploy it tomorrow" | `the the project is almost done I think we should deploy it tomorrow` | `The project is almost done. I think we should deploy it tomorrow.` |
+
+Stutter ("the the") removed, contractions fixed ("its" to "it's"), sentence breaks added, proper punctuation and capitalization throughout. However, the same formal style is applied everywhere — a Discord message gets the same treatment as an email.
+
+#### + On-Screen Recognition (OSR)
+
+OCR captures your active window during recording. Two things improve:
+
+1. **Name accuracy**: Proper nouns visible on screen (colleague names, project names, technical terms) are fed to Whisper as vocabulary hints, so it spells them correctly
+2. **App-aware formatting**: The post-processing prompt changes based on what app you're in
+
+| App type | What changes |
+|----------|-------------|
+| **Chat** (Discord, Slack, Teams) | Keeps slang (lol, lmao, tbh, ngl), preserves "like", lowercase start, no trailing period, keeps casual emphasis (yeah yeah, fr fr), preserves informal contractions (tryna, gonna, wanna) |
+| **Email** (Outlook, Gmail) | Professional tone, complete sentences, proper greetings preserved |
+| **Code** (VS Code, PyCharm) | Preserves camelCase, snake_case, technical terms, file extensions |
+| **Terminal** (PowerShell, cmd) | Preserves command names, flags, paths, technical terms |
+| **Document** (Word, Notion) | Well-structured sentences, breaks run-on speech into clear paragraphs |
+
+Example — same sentence, different apps:
+
+| You say | Post-Processing only | + OSR in Discord (Chat) | + OSR in Outlook (Email) |
+|---------|---------------------|------------------------|--------------------------|
+| "yeah ngl i think we should just push it to tomorrow tbh" | `Yeah, I think we should just push it to tomorrow.` | `yeah ngl I think we should just push it to tomorrow tbh` | `Yeah, I think we should just push it to tomorrow.` |
+| "hey can you send me that report when you get a chance" | `Hey, can you send me that report when you get a chance?` | `hey can you send me that report when you get a chance?` | `Hey, can you send me that report when you get a chance?` |
+
+The Chat prompt keeps the message casual — slang stays, lowercase start, no unnecessary period. The Email prompt keeps it professional. Without OSR, everything gets the same generic treatment.
+
+**Name accuracy example**: If your coworker "Priya Raghavan" is visible in a Slack thread, OSR feeds that name to Whisper. Without it, Whisper might transcribe "Priya Ragavan" or "Priya Raghaven". With OSR, the correct spelling is hinted.
+
+#### + Self-Learning
+
+Builds persistent per-app profiles that improve over time. Two things are added on top of OSR:
+
+1. **Vocabulary from past sessions**: Names and terms you've encountered before in an app are used as Whisper hints even when they aren't visible on the current screen. If "Priya Raghavan" appeared in Slack last week, the learning engine remembers and hints it for future transcriptions in Slack
+2. **Style adaptation**: After 3+ sessions in an app, the engine learns communication patterns (formality level, punctuation habits, capitalization style) and adjusts the post-processing prompt to match
+
+| Feature | OSR only | + Self-Learning |
+|---------|---------|-----------------|
+| Vocabulary hints | Only names visible on screen right now | Names from screen + all names seen in this app before |
+| Style prompt | Fixed per app type | Adapts to observed patterns (casual vs formal, punctuation density, etc.) |
+| Overlay badge | Generic type ("Chat", "Email") | Specific app name ("Discord", "Outlook") |
+| Persistence | None — starts fresh each session | Profiles saved to disk, improve across sessions |
+
+**Practical example**: You use Slack daily with teammates named "Dmitri", "Xiaowen", and "Kayleigh". After a few sessions with self-learning on, these names are in your Slack vocabulary profile. Even when none of them are visible on screen, Whisper gets them as hints and spells them correctly. Without self-learning, Whisper would only get hints for names currently visible on the screen.
+
+#### Summary
+
+| Layer | What it adds | Requires |
+|-------|-------------|----------|
+| **Whisper only** | Raw speech-to-text | Nothing |
+| **+ Post-Processing** | Grammar, punctuation, capitalization, stutter removal, sentence breaks | Qwen 2.5 model (~1.1 GB download) |
+| **+ OSR** | App-aware formatting, name accuracy from screen | Post-Processing |
+| **+ Self-Learning** | Persistent vocabulary, style adaptation, improves over time | OSR |
+
 ## Troubleshooting
 
 ### "uv is not recognized" error

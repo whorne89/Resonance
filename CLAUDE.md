@@ -116,6 +116,7 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 ## Self-Learning Recognition
 - **Engine**: `LearningEngine` in `core/learning_engine.py` — passively builds per-app profiles from OCR screen data
 - **What it learns**: Per-app vocabulary (proper nouns seen on screen), style metrics (message length, capitalization ratio, punctuation ratio, formality score, abbreviation count), and app type with increasing confidence
+- **Pipeline integration**: Learned vocabulary is merged with OCR proper nouns and fed to Whisper's `initial_prompt`. Style hints (from `build_style_prompt_suffix`) are appended to the post-processing system prompt. Both are wired in `start_transcription()` → `TranscriptionWorker`
 - **App key normalization**: Extracts stable identifiers from volatile window titles — "Discord - #general" and "Discord - #random" map to the same `discord` key. Detects web apps inside browsers (e.g. "Outlook - Google Chrome" → `outlook`)
 - **KNOWN_APPS**: Dict mapping name fragments to (app_key, display_name, app_type) — 30+ apps across chat, email, code, terminal, document categories
 - **Style merging**: Uses exponential moving average (EMA, alpha=0.3) so profiles stabilize over time but adapt. Needs ≥3 samples before style hints are used

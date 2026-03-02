@@ -42,13 +42,16 @@ class TranscriptionWorker(QObject):
     finished = Signal(str, float)  # Emits transcribed text + confidence (0.0-1.0)
     error = Signal(str)  # Emits error message
 
-    def __init__(self, transcriber, audio_data, post_processor=None, logger=None, ocr_context=None):
+    def __init__(self, transcriber, audio_data, post_processor=None, logger=None,
+                 ocr_context=None, learned_vocabulary=None, style_suffix=None):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
         self.post_processor = post_processor
         self.logger = logger
         self.ocr_context = ocr_context
+        self.learned_vocabulary = learned_vocabulary or []
+        self.style_suffix = style_suffix
 
     def run(self):
         """Run transcription."""
@@ -57,15 +60,30 @@ class TranscriptionWorker(QObject):
             initial_prompt = None
             system_prompt = None
             if self.ocr_context:
+                # Merge OCR proper nouns with learned vocabulary from past sessions
+                all_nouns = list(self.ocr_context.proper_nouns)
+                if self.learned_vocabulary:
+                    seen = {n.lower() for n in all_nouns}
+                    for term in self.learned_vocabulary:
+                        if term.lower() not in seen:
+                            all_nouns.append(term)
+                            seen.add(term.lower())
+
                 initial_prompt = ScreenContextEngine.build_whisper_prompt(
-                    self.ocr_context.proper_nouns, self.ocr_context.app_type
+                    all_nouns, self.ocr_context.app_type
                 )
                 system_prompt = ScreenContextEngine.build_system_prompt(
-                    self.ocr_context.app_type, self.ocr_context.proper_nouns
+                    self.ocr_context.app_type, all_nouns
                 )
+
+                # Append learned style hints to system prompt
+                if self.style_suffix and system_prompt:
+                    system_prompt += f"\n\n{self.style_suffix}"
+
                 if self.logger:
                     self.logger.info(f"OCR context: app_type={self.ocr_context.app_type.value}, "
-                                    f"nouns={self.ocr_context.proper_nouns}")
+                                    f"nouns={self.ocr_context.proper_nouns}, "
+                                    f"learned_vocab={len(self.learned_vocabulary)}")
 
             if self.logger:
                 self.logger.info("Starting transcription...")
@@ -326,11 +344,25 @@ class VTTApplication(QObject):
             self.transcription_worker.deleteLater()
             self.transcription_worker = None
 
+        # Extract learned vocabulary and style hints if learning engine is active
+        learned_vocabulary = []
+        style_suffix = None
+        if self.learning_engine and self._current_ocr_context:
+            title = self._current_ocr_context.window_title
+            learned_vocabulary = self.learning_engine.get_vocabulary(title)
+            style_suffix = self.learning_engine.build_style_prompt_suffix(title)
+            if learned_vocabulary:
+                self.logger.info(f"Learning: {len(learned_vocabulary)} vocab terms for '{title[:30]}'")
+            if style_suffix:
+                self.logger.info(f"Learning: style hints: {style_suffix}")
+
         # Create worker and thread
         self.transcription_thread = QThread()
         self.transcription_worker = TranscriptionWorker(
             self.transcriber, audio_data, self.post_processor, self.logger,
-            ocr_context=self._current_ocr_context
+            ocr_context=self._current_ocr_context,
+            learned_vocabulary=learned_vocabulary,
+            style_suffix=style_suffix,
         )
 
         # Move worker to thread
