@@ -56,10 +56,22 @@ class HotkeyManager:
                 # Regular character key
                 try:
                     keys.add(keyboard.KeyCode.from_char(part))
-                except:
+                except Exception:
                     self.logger.warning(f"Unknown key '{part}' in hotkey string")
 
         return keys
+
+    # Map each modifier variant to its left/right pair for matching
+    _MODIFIER_PAIRS = {
+        keyboard.Key.ctrl_l: {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r},
+        keyboard.Key.ctrl_r: {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r},
+        keyboard.Key.alt_l: {keyboard.Key.alt_l, keyboard.Key.alt_r},
+        keyboard.Key.alt_r: {keyboard.Key.alt_l, keyboard.Key.alt_r},
+        keyboard.Key.shift_l: {keyboard.Key.shift_l, keyboard.Key.shift_r},
+        keyboard.Key.shift_r: {keyboard.Key.shift_l, keyboard.Key.shift_r},
+        keyboard.Key.cmd_l: {keyboard.Key.cmd_l, keyboard.Key.cmd_r},
+        keyboard.Key.cmd_r: {keyboard.Key.cmd_l, keyboard.Key.cmd_r},
+    }
 
     def is_hotkey_pressed(self, hotkey_set):
         """
@@ -71,29 +83,13 @@ class HotkeyManager:
         Returns:
             True if all keys in hotkey are pressed
         """
-        # For each key in hotkey, check if at least one variant is pressed
         for required_key in hotkey_set:
-            # Handle modifier keys (both left and right variants)
-            if required_key in [keyboard.Key.ctrl_l, keyboard.Key.ctrl_r]:
-                if not (keyboard.Key.ctrl_l in self.current_keys or
-                       keyboard.Key.ctrl_r in self.current_keys):
+            variants = self._MODIFIER_PAIRS.get(required_key)
+            if variants:
+                if not (variants & self.current_keys):
                     return False
-            elif required_key in [keyboard.Key.alt_l, keyboard.Key.alt_r]:
-                if not (keyboard.Key.alt_l in self.current_keys or
-                       keyboard.Key.alt_r in self.current_keys):
-                    return False
-            elif required_key in [keyboard.Key.shift_l, keyboard.Key.shift_r]:
-                if not (keyboard.Key.shift_l in self.current_keys or
-                       keyboard.Key.shift_r in self.current_keys):
-                    return False
-            elif required_key in [keyboard.Key.cmd_l, keyboard.Key.cmd_r]:
-                if not (keyboard.Key.cmd_l in self.current_keys or
-                       keyboard.Key.cmd_r in self.current_keys):
-                    return False
-            else:
-                # Regular key
-                if required_key not in self.current_keys:
-                    return False
+            elif required_key not in self.current_keys:
+                return False
 
         return True
 

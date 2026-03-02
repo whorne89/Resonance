@@ -382,10 +382,7 @@ class ScreenContextEngine:
                 loop.close()
 
             # Extract text from result (WinRT OcrResult uses attributes, not dicts)
-            lines = []
-            for line in result.lines:
-                lines.append(line.text)
-            return "\n".join(lines)
+            return "\n".join(line.text for line in result.lines)
         except Exception as e:
             self.logger.warning(f"OCR: text extraction failed: {e}")
             return ""

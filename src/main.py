@@ -5,9 +5,28 @@ Main entry point that orchestrates all components.
 
 import sys
 import ctypes
+import threading
 from datetime import date
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QPushButton
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
+
+from core.audio_recorder import AudioRecorder
+from core.transcriber import Transcriber
+from core.keyboard_typer import KeyboardTyper
+from core.hotkey_manager import HotkeyManager
+from core.dictionary import DictionaryProcessor
+from core.learning_engine import KNOWN_APPS, LearningEngine
+from core.post_processor import PostProcessor
+from core.screen_context import AppType, ScreenContextEngine
+from core.sound_effects import SoundEffects
+from core.text_cleaners import clean_comma_spam, replace_spoken_punctuation
+from gui.recording_overlay import RecordingOverlay
+from gui.system_tray import SystemTrayIcon
+from gui.settings_dialog import SettingsDialog
+from gui.theme import apply_theme
+from gui.toast_notification import ClipboardToast, DownloadToast
+from utils.config import ConfigManager
+from utils.logger import setup_logger
 
 
 def set_windows_app_id():
@@ -18,22 +37,6 @@ def set_windows_app_id():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
         pass  # Not on Windows or API not available
-
-from core.audio_recorder import AudioRecorder
-from core.transcriber import Transcriber
-from core.keyboard_typer import KeyboardTyper
-from core.hotkey_manager import HotkeyManager
-from core.dictionary import DictionaryProcessor
-from core.post_processor import PostProcessor
-from core.sound_effects import SoundEffects
-from core.screen_context import ScreenContextEngine
-from gui.recording_overlay import RecordingOverlay
-from gui.system_tray import SystemTrayIcon
-from gui.settings_dialog import SettingsDialog
-from gui.theme import apply_theme
-from gui.toast_notification import ClipboardToast, DownloadToast
-from utils.config import ConfigManager
-from utils.logger import setup_logger
 
 
 class TranscriptionWorker(QObject):
@@ -95,7 +98,6 @@ class TranscriptionWorker(QObject):
 
             # Clean comma spam from Whisper output (always on)
             if text:
-                from core.text_cleaners import clean_comma_spam
                 original = text
                 text = clean_comma_spam(text)
                 if text != original and self.logger:
@@ -104,9 +106,7 @@ class TranscriptionWorker(QObject):
             # Replace spoken punctuation (e.g., "slash" -> "/")
             # Only in terminal/code contexts where symbols are expected
             if text and self.spoken_punctuation and self.ocr_context:
-                from core.screen_context import AppType
                 if self.ocr_context.app_type in (AppType.CODE, AppType.TERMINAL):
-                    from core.text_cleaners import replace_spoken_punctuation
                     original = text
                     text = replace_spoken_punctuation(text)
                     if text != original and self.logger:
@@ -136,7 +136,6 @@ class TranscriptionWorker(QObject):
 
             # Apply structural formatting based on app type
             if self.ocr_context and text:
-                from core.screen_context import AppType
                 if self.ocr_context.app_type == AppType.CHAT:
                     text = ScreenContextEngine.apply_chat_formatting(text)
 
@@ -164,6 +163,52 @@ class ModelLoadWorker(QObject):
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
+
+
+class _UpdateCheckWorker(QObject):
+    """Worker for checking GitHub Releases in a background thread."""
+
+    update_available = Signal(str, str, str)  # version, download_url, message
+    up_to_date = Signal()
+
+    def run(self):
+        from core.updater import UpdateChecker
+        checker = UpdateChecker()
+        info = checker.check_for_update()
+        if info:
+            self.update_available.emit(info.version_str, info.download_url, info.tag_name)
+        else:
+            self.up_to_date.emit()
+
+
+class _UpdateDownloadWorker(QObject):
+    """Worker for downloading an update in a background thread."""
+
+    finished = Signal(str)  # downloaded file path
+    error = Signal(str)
+    progress = Signal(int, int)  # downloaded, total
+
+    def __init__(self, version_str, download_url):
+        super().__init__()
+        self.version_str = version_str
+        self.download_url = download_url
+
+    def run(self):
+        from core.updater import UpdateChecker, UpdateInfo
+        checker = UpdateChecker()
+        info = UpdateInfo(
+            version_str=self.version_str,
+            tag_name="",
+            download_url=self.download_url,
+        )
+        path = checker.download_update(info, progress_callback=self._on_progress)
+        if path:
+            self.finished.emit(path)
+        else:
+            self.error.emit("Download failed")
+
+    def _on_progress(self, downloaded, total):
+        self.progress.emit(downloaded, total)
 
 
 class VTTApplication(QObject):
@@ -210,7 +255,6 @@ class VTTApplication(QObject):
         # Self-learning engine — learns from OCR data over time
         self.learning_engine = None
         if self.config.get_learning_enabled() and self.screen_context is not None:
-            from core.learning_engine import LearningEngine
             self.learning_engine = LearningEngine()
 
         # Set audio device from config
@@ -265,7 +309,6 @@ class VTTApplication(QObject):
 
             # Fire OCR capture in background (non-blocking, runs during recording)
             if self.screen_context:
-                import threading
                 def _capture_ocr():
                     try:
                         self._current_ocr_context = self.screen_context.capture()
@@ -615,7 +658,6 @@ class VTTApplication(QObject):
         # Update learning engine — requires screen context
         learning_enabled = self.config.get_learning_enabled() and self.screen_context is not None
         if learning_enabled and self.learning_engine is None:
-            from core.learning_engine import LearningEngine
             self.learning_engine = LearningEngine()
         elif not learning_enabled:
             if self.learning_engine:
@@ -647,7 +689,6 @@ class VTTApplication(QObject):
         if not ocr_context:
             return None
         # Try to match window title against known apps for a specific name
-        from core.learning_engine import KNOWN_APPS
         title_lower = ocr_context.window_title.lower() if ocr_context.window_title else ""
         for app_name in sorted(KNOWN_APPS, key=len, reverse=True):
             if app_name in title_lower:
@@ -733,6 +774,25 @@ def main():
     model_id = vtt_app.config.get_model_size()
     model_label = model_names.get(model_id, model_id)
 
+    def _build_startup_details():
+        """Build the startup toast details string."""
+        pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
+        if vtt_app.screen_context is not None:
+            osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
+        else:
+            osr_status = "OSR: Off"
+        use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
+        entry_method = "Clipboard" if use_clipboard else "Character-by-character"
+        return (
+            f"Model: {model_label}\n"
+            f"{osr_status}\n"
+            f"Post-processing: {pp_status}\n"
+            f"Entry: {entry_method}"
+        )
+
+    # Clean up any partial/failed model downloads before checking
+    vtt_app.transcriber.clean_partial_download(model_id)
+
     if not vtt_app.transcriber.is_model_downloaded(model_id):
         # Unregister hotkey until model is ready
         vtt_app.hotkey_manager.unregister_hotkey()
@@ -749,25 +809,11 @@ def main():
 
         def _show_post_download_toast():
             """Show startup toast after model download completes."""
-            pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-            if vtt_app.screen_context is not None:
-                osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
-            else:
-                osr_status = "OSR: Off"
-            use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
-            entry_method = "Clipboard" if use_clipboard else "Character-by-character"
-
             startup_msg = (
                 f"Model downloaded, ready to use\n"
                 f"Press {vtt_app.config.get_hotkey_display()} to dictate"
             )
-            startup_details = (
-                f"Model: {model_label}\n"
-                f"{osr_status}\n"
-                f"Post-processing: {pp_status}\n"
-                f"Entry: {entry_method}"
-            )
-            tray_icon.show_message("Service Started", startup_msg, details=startup_details)
+            tray_icon.show_message("Service Started", startup_msg, details=_build_startup_details())
 
         def on_model_loaded():
             download_toast._anim_timer.stop()
@@ -797,22 +843,124 @@ def main():
         load_thread.start()
     else:
         # Normal startup — show info toast
-        pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
-        if vtt_app.screen_context is not None:
-            osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
-        else:
-            osr_status = "OSR: Off"
-        use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
-        entry_method = "Clipboard" if use_clipboard else "Character-by-character"
-
         startup_msg = f"Press {vtt_app.config.get_hotkey_display()} to dictate"
-        startup_details = (
-            f"Model: {model_label}\n"
-            f"{osr_status}\n"
-            f"Post-processing: {pp_status}\n"
-            f"Entry: {entry_method}"
-        )
-        tray_icon.show_message("Service Started", startup_msg, details=startup_details)
+        tray_icon.show_message("Service Started", startup_msg, details=_build_startup_details())
+
+    # --- Auto-update check (8s after launch) ---
+    def _start_update_check():
+        from gui.update_toast import UpdateToast
+        from gui.theme import RoundedDialog
+
+        thread = QThread()
+        worker = _UpdateCheckWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _on_update_available(version_str, download_url, tag_name):
+            thread.quit()
+            from utils.resource_path import is_bundled
+
+            toast = UpdateToast(version_str)
+
+            def _on_accepted():
+                toast.hide()
+                if is_bundled():
+                    _download_and_apply(version_str, download_url, vtt_app)
+                else:
+                    from core.updater import UpdateChecker, UpdateInfo
+                    info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)
+                    msg = UpdateChecker.get_source_update_message(info)
+                    tray_icon.show_message("Update Available", msg)
+
+            toast.accepted.connect(_on_accepted)
+            toast.show_toast()
+
+            # Keep references alive
+            vtt_app._update_toast = toast
+
+        def _on_up_to_date():
+            thread.quit()
+
+        worker.update_available.connect(_on_update_available)
+        worker.up_to_date.connect(_on_up_to_date)
+
+        # Keep references alive
+        vtt_app._update_thread = thread
+        vtt_app._update_worker = worker
+
+        thread.start()
+
+    def _download_and_apply(version_str, download_url, vtt_app):
+        """Show download progress dialog, then apply the update."""
+        from gui.theme import RoundedDialog
+
+        dlg = RoundedDialog()
+        dlg.setWindowTitle("Updating Resonance")
+        dlg.setMinimumWidth(420)
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+        status = QLabel(f"Downloading Resonance {version_str}...")
+        status.setStyleSheet("font-size: 12px;")
+        layout.addWidget(status)
+
+        bar = QProgressBar()
+        bar.setMinimum(0)
+        bar.setMaximum(100)
+        bar.setValue(0)
+        bar.setTextVisible(True)
+        bar.setFormat("%v%")
+        bar.setMinimumHeight(28)
+        layout.addWidget(bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        dlg.setLayout(layout)
+
+        dl_thread = QThread()
+        dl_worker = _UpdateDownloadWorker(version_str, download_url)
+        dl_worker.moveToThread(dl_thread)
+        dl_thread.started.connect(dl_worker.run)
+
+        def _on_progress(downloaded, total):
+            if total > 0:
+                pct = min(99, int(downloaded / total * 100))
+                bar.setValue(pct)
+                mb_done = downloaded / (1024 * 1024)
+                mb_total = total / (1024 * 1024)
+                status.setText(f"Downloading Resonance {version_str}... {mb_done:.1f} / {mb_total:.1f} MB")
+
+        def _on_finished(path):
+            bar.setValue(100)
+            dl_thread.quit()
+            dlg.accept()
+            # Apply the update
+            from core.updater import UpdateChecker
+            checker = UpdateChecker()
+            if checker.apply_update(path):
+                vtt_app.quit()
+
+        def _on_error(msg):
+            dl_thread.quit()
+            status.setText(f"Download failed: {msg}")
+
+        dl_worker.progress.connect(_on_progress)
+        dl_worker.finished.connect(_on_finished)
+        dl_worker.error.connect(_on_error)
+
+        # Keep references
+        dlg._dl_thread = dl_thread
+        dlg._dl_worker = dl_worker
+
+        dl_thread.start()
+        dlg.exec()
+
+    QTimer.singleShot(8000, _start_update_check)
 
     # Run application
     sys.exit(app.exec())

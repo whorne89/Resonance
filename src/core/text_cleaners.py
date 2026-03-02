@@ -68,10 +68,14 @@ SPOKEN_PUNCTUATION = [
 
 # Pre-compile patterns sorted longest-first so multi-word phrases
 # are matched before their single-word substrings.
-_SPOKEN_PATTERNS = []
-for _spoken, _symbol in sorted(SPOKEN_PUNCTUATION, key=lambda x: len(x[0]), reverse=True):
-    _pat = re.compile(r'\b' + re.escape(_spoken) + r'\b', re.IGNORECASE)
-    _SPOKEN_PATTERNS.append((_pat, _symbol))
+def _compile_spoken_patterns():
+    patterns = []
+    for spoken, symbol in sorted(SPOKEN_PUNCTUATION, key=lambda x: len(x[0]), reverse=True):
+        pat = re.compile(r'\b' + re.escape(spoken) + r'\b', re.IGNORECASE)
+        patterns.append((pat, symbol))
+    return patterns
+
+_SPOKEN_PATTERNS = _compile_spoken_patterns()
 
 
 def clean_comma_spam(text):

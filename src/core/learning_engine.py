@@ -446,20 +446,20 @@ class LearningEngine:
 
     def _update_style_metrics(self, profile, ocr_text):
         """Compute style metrics from OCR text and merge via EMA."""
-        lines = [l.strip() for l in ocr_text.strip().split("\n") if l.strip()]
+        lines = [ln.strip() for ln in ocr_text.strip().split("\n") if ln.strip()]
         if not lines:
             return
 
         # Words per line
-        word_counts = [len(l.split()) for l in lines]
+        word_counts = [len(ln.split()) for ln in lines]
         avg_words = sum(word_counts) / len(word_counts)
 
         # Capitalization ratio — fraction of lines starting with uppercase
-        cap_lines = sum(1 for l in lines if l and l[0].isupper())
+        cap_lines = sum(1 for ln in lines if ln and ln[0].isupper())
         cap_ratio = cap_lines / len(lines)
 
         # Punctuation ratio — fraction of lines ending with . ! ?
-        punct_lines = sum(1 for l in lines if l and l[-1] in ".!?")
+        punct_lines = sum(1 for ln in lines if ln and ln[-1] in ".!?")
         punct_ratio = punct_lines / len(lines)
 
         # Abbreviation count — count slang terms in text

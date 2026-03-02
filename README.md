@@ -218,6 +218,13 @@ MIT License
 
 ## Changelog
 
+### v3.1.1
+- **Portable EXE**: Distributable as a single folder — extract the ZIP, double-click `Resonance.exe`, no Python or installer required. All data (models, config, logs) stored relative to the app directory
+- **Auto-updater**: Checks GitHub Releases 8 seconds after launch. Shows an interactive toast with Yes/No (auto-dismisses after 10s). On accept, downloads the update, writes a batch script that restarts the app with the new version. Also adds a "Check for Updates" button and version display in Settings
+- **Download auto-recovery**: Detects and cleans up partially downloaded models (`.incomplete` blobs or missing `model.bin`) on startup and before retries, so interrupted downloads no longer cause cryptic errors
+- **PyInstaller build spec**: `resonance.spec` bundles faster-whisper, CTranslate2 native DLLs, icons, and package metadata for `importlib.metadata.version()` support
+- **packaging dependency**: Added `packaging>=23.0` for semantic version comparison in the updater
+
 ### v3.0.1
 - **Self-learning pipeline wiring**: Learned vocabulary from past sessions is now merged with OCR proper nouns and fed to Whisper as vocabulary hints. Style adaptation hints are appended to the post-processing system prompt. Previously, self-learning only observed and recorded data — now it actively improves transcription accuracy
 - **Feature Layers documentation**: Added a detailed section to README showing concrete before/after examples for each feature level (Whisper only → Post-Processing → OSR → Self-Learning)

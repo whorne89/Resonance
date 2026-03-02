@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "resonance"
-version = "3.0.1"
+version = "3.1.1"
 description = "A local voice-to-text dictation application using OpenAI Whisper"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -21,7 +21,11 @@ dependencies = [
     "pyperclip>=1.8.2",
     "winocr>=0.0.8",
     "mss>=9.0.0",
+    "packaging>=23.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0"]
 
 [project.scripts]
 resonance = "src.main:main"

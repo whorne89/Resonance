@@ -89,23 +89,19 @@ class KeyboardTyper:
         Returns:
             True if successful, False otherwise
         """
-        self.logger.info(f"paste_from_clipboard called with {len(text)} chars")
+        self.logger.info(f"Pasting {len(text)} chars via clipboard")
         try:
-            # Copy text to clipboard
-            self.logger.info("Copying text to clipboard...")
             pyperclip.copy(text)
-            self.logger.info("Text copied to clipboard successfully")
 
             # Small delay
             time.sleep(0.1)
 
             # Paste using Ctrl+V
-            self.logger.info("Simulating Ctrl+V paste...")
             with self.controller.pressed(Key.ctrl):
                 self.controller.press('v')
                 self.controller.release('v')
 
-            self.logger.info("Paste simulation completed")
+            self.logger.info("Paste completed")
             return True
 
         except Exception as e:

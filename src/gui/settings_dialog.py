@@ -13,12 +13,12 @@ from urllib.parse import quote
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QGroupBox, QLineEdit,
-    QMessageBox, QFormLayout, QProgressBar, QRadioButton,
+    QFormLayout, QProgressBar, QRadioButton,
     QButtonGroup, QGridLayout, QFrame, QCheckBox,
     QScrollArea, QWidget
 )
 from PySide6.QtCore import Signal, QTimer, Qt, QThread, QObject
-from PySide6.QtGui import QPalette, QColor, QKeyEvent, QGuiApplication
+from PySide6.QtGui import QKeyEvent, QGuiApplication
 
 from gui.dictionary_dialog import DictionaryDialog
 from gui.theme import RoundedDialog, MessageBox
@@ -202,6 +202,9 @@ class _DownloadWorker(QObject):
 
     def run(self):
         try:
+            # Clean up any partial/failed downloads before retrying
+            self.transcriber.clean_partial_download(self.model_size)
+
             from huggingface_hub import snapshot_download
             repo_id = (
                 self.model_size if '/' in self.model_size
@@ -456,6 +459,59 @@ class PostProcessingDownloadDialog(RoundedDialog):
         return self._success
 
 
+class _SettingsUpdateCheckWorker(QObject):
+    """Background worker for checking updates from settings dialog."""
+
+    update_available = Signal(str, str, str)  # version, download_url, tag_name
+    up_to_date = Signal()
+    error = Signal(str)
+
+    def run(self):
+        try:
+            from core.updater import UpdateChecker
+            checker = UpdateChecker()
+            info = checker.check_for_update()
+            if info:
+                self.update_available.emit(info.version_str, info.download_url, info.tag_name)
+            else:
+                self.up_to_date.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _SettingsUpdateDownloadWorker(QObject):
+    """Background worker for downloading an update from settings dialog."""
+
+    finished = Signal(str)  # downloaded file path
+    error = Signal(str)
+    progress = Signal(int, int)  # downloaded, total
+
+    def __init__(self, version_str, download_url):
+        super().__init__()
+        self.version_str = version_str
+        self.download_url = download_url
+
+    def run(self):
+        try:
+            from core.updater import UpdateChecker, UpdateInfo
+            checker = UpdateChecker()
+            info = UpdateInfo(
+                version_str=self.version_str,
+                tag_name="",
+                download_url=self.download_url,
+            )
+            path = checker.download_update(info, progress_callback=self._on_progress)
+            if path:
+                self.finished.emit(path)
+            else:
+                self.error.emit("Download failed")
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def _on_progress(self, downloaded, total):
+        self.progress.emit(downloaded, total)
+
+
 class SettingsDialog(RoundedDialog):
     """Settings configuration dialog."""
 
@@ -523,6 +579,10 @@ class SettingsDialog(RoundedDialog):
         # Dictionary settings
         dictionary_group = self.create_dictionary_group()
         content_layout.addWidget(dictionary_group)
+
+        # Updates
+        updates_group = self.create_updates_group()
+        content_layout.addWidget(updates_group)
 
         # Bug report
         bug_report_group = self.create_bug_report_group()
@@ -801,6 +861,181 @@ class SettingsDialog(RoundedDialog):
         group.setLayout(layout)
         return group
 
+    def create_updates_group(self):
+        """Create updates group with version display and check button."""
+        group = QGroupBox("Updates")
+        layout = QVBoxLayout()
+
+        # Current version
+        try:
+            current_ver = pkg_version("resonance")
+        except PackageNotFoundError:
+            current_ver = "dev"
+
+        version_label = QLabel(f"Current version: {current_ver}")
+        version_label.setStyleSheet("font-size: 12px; font-weight: bold;")
+        layout.addWidget(version_label)
+
+        # Status label (hidden until check performed)
+        self._update_status = QLabel("")
+        self._update_status.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        self._update_status.hide()
+        layout.addWidget(self._update_status)
+
+        # Buttons row
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        # "Download and Install" button — hidden by default, shown when update found
+        self._update_download_btn = QPushButton("Download and Install")
+        self._update_download_btn.hide()
+        self._update_download_btn.clicked.connect(self._download_update)
+        button_layout.addWidget(self._update_download_btn)
+
+        # "Check for Updates" button
+        self._update_check_btn = QPushButton("Check for Updates")
+        self._update_check_btn.clicked.connect(self._check_for_updates)
+        button_layout.addWidget(self._update_check_btn)
+
+        layout.addLayout(button_layout)
+
+        # Source install hint (hidden until update found on non-bundled)
+        self._update_source_hint = QLabel("")
+        self._update_source_hint.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        self._update_source_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._update_source_hint.hide()
+        layout.addWidget(self._update_source_hint)
+
+        # Stash for download info
+        self._pending_update_version = None
+        self._pending_update_url = None
+
+        group.setLayout(layout)
+        return group
+
+    def _check_for_updates(self):
+        """Run update check in background thread."""
+        self._update_check_btn.setEnabled(False)
+        self._update_status.setText("Checking...")
+        self._update_status.show()
+
+        thread = QThread()
+        worker = _SettingsUpdateCheckWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _on_update(version_str, download_url, tag_name):
+            thread.quit()
+            self._update_check_btn.setEnabled(True)
+            self._update_status.setText(f"Resonance {version_str} is available!")
+            self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
+            self._pending_update_version = version_str
+            self._pending_update_url = download_url
+
+            from utils.resource_path import is_bundled
+            if is_bundled():
+                self._update_download_btn.show()
+            else:
+                self._update_source_hint.setText(f"Run: git pull && uv sync")
+                self._update_source_hint.show()
+
+        def _on_up_to_date():
+            thread.quit()
+            self._update_check_btn.setEnabled(True)
+            self._update_status.setText("Up to date!")
+            self._update_status.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+        def _on_error(msg):
+            thread.quit()
+            self._update_check_btn.setEnabled(True)
+            self._update_status.setText(f"Check failed: {msg}")
+
+        worker.update_available.connect(_on_update)
+        worker.up_to_date.connect(_on_up_to_date)
+        worker.error.connect(_on_error)
+
+        # Keep references
+        self._update_check_thread = thread
+        self._update_check_worker = worker
+
+        thread.start()
+
+    def _download_update(self):
+        """Download and apply update via progress dialog."""
+        if not self._pending_update_version or not self._pending_update_url:
+            return
+
+        version_str = self._pending_update_version
+        download_url = self._pending_update_url
+
+        # Create progress dialog
+        dlg = RoundedDialog(self)
+        dlg.setWindowTitle("Updating Resonance")
+        dlg.setMinimumWidth(420)
+
+        d_layout = QVBoxLayout()
+        d_layout.setSpacing(12)
+        d_status = QLabel(f"Downloading Resonance {version_str}...")
+        d_status.setStyleSheet("font-size: 12px;")
+        d_layout.addWidget(d_status)
+
+        d_bar = QProgressBar()
+        d_bar.setMinimum(0)
+        d_bar.setMaximum(100)
+        d_bar.setValue(0)
+        d_bar.setTextVisible(True)
+        d_bar.setFormat("%v%")
+        d_bar.setMinimumHeight(28)
+        d_layout.addWidget(d_bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_layout.addWidget(cancel_btn)
+        d_layout.addLayout(btn_layout)
+
+        dlg.setLayout(d_layout)
+
+        thread = QThread()
+        worker = _SettingsUpdateDownloadWorker(version_str, download_url)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _on_progress(downloaded, total):
+            if total > 0:
+                pct = min(99, int(downloaded / total * 100))
+                d_bar.setValue(pct)
+                mb_done = downloaded / (1024 * 1024)
+                mb_total = total / (1024 * 1024)
+                d_status.setText(f"Downloading Resonance {version_str}... {mb_done:.1f} / {mb_total:.1f} MB")
+
+        def _on_finished(path):
+            d_bar.setValue(100)
+            thread.quit()
+            dlg.accept()
+            from core.updater import UpdateChecker
+            checker = UpdateChecker()
+            if checker.apply_update(path):
+                # Close settings dialog and quit app for restart
+                self.reject()
+                from PySide6.QtWidgets import QApplication
+                QApplication.quit()
+
+        def _on_error(msg):
+            thread.quit()
+            d_status.setText(f"Download failed: {msg}")
+
+        worker.progress.connect(_on_progress)
+        worker.finished.connect(_on_finished)
+        worker.error.connect(_on_error)
+
+        dlg._dl_thread = thread
+        dlg._dl_worker = worker
+
+        thread.start()
+        dlg.exec()
+
     def create_bug_report_group(self):
         """Create bug report group box."""
         group = QGroupBox("Bug Report")
@@ -860,35 +1095,8 @@ class SettingsDialog(RoundedDialog):
             log_lines = "(no log file found)"
 
         # Build body
-        body = (
-            "## Description\n"
-            "[Describe the issue here]\n\n"
-            "## Steps to Reproduce\n"
-            "1. \n2. \n3. \n\n"
-            "## Expected Behavior\n\n\n"
-            "## System Info\n"
-            f"- **App Version**: {app_version}\n"
-            f"- **OS**: {platform.platform()}\n"
-            f"- **Python**: {platform.python_version()}\n"
-            f"- **Model**: {model_display}\n"
-            f"- **Post-Processing**: {pp_status}\n"
-            f"- **Entry Method**: {entry_method}\n"
-            f"- **Audio Device**: {audio_device}\n\n"
-            "## Recent Logs\n"
-            "```\n"
-            f"{log_lines}"
-            "```\n"
-        )
-
-        # Truncate body to keep URL under ~8000 chars
-        max_body = 6000
-        if len(body) > max_body:
-            # Trim log lines to fit
-            truncation_note = "\n... (truncated)\n```\n"
-            overhead = len(body) - len(log_lines)
-            allowed_log = max_body - overhead - len(truncation_note)
-            log_lines = log_lines[:allowed_log] + truncation_note
-            body = (
+        def _build_body(logs):
+            return (
                 "## Description\n"
                 "[Describe the issue here]\n\n"
                 "## Steps to Reproduce\n"
@@ -904,9 +1112,20 @@ class SettingsDialog(RoundedDialog):
                 f"- **Audio Device**: {audio_device}\n\n"
                 "## Recent Logs\n"
                 "```\n"
-                f"{log_lines}"
+                f"{logs}"
                 "```\n"
             )
+
+        body = _build_body(log_lines)
+
+        # Truncate body to keep URL under ~8000 chars
+        max_body = 6000
+        if len(body) > max_body:
+            truncation_note = "\n... (truncated)\n```\n"
+            overhead = len(body) - len(log_lines)
+            allowed_log = max_body - overhead - len(truncation_note)
+            log_lines = log_lines[:allowed_log] + truncation_note
+            body = _build_body(log_lines)
 
         title = quote("Bug: ")
         encoded_body = quote(body)

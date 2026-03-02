@@ -3,7 +3,6 @@ Resource path utilities for Resonance.
 Handles path resolution for both development and PyInstaller bundled EXE.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,10 +19,10 @@ def _get_app_root():
     """
     if hasattr(sys, '_MEIPASS'):
         # Running as bundled exe - use the directory where the .exe lives
-        return Path(os.path.dirname(sys.executable))
+        return Path(sys.executable).parent
     else:
         # Running as script - src/utils/resource_path.py -> go up two levels to project root
-        return Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        return Path(__file__).parent.parent.parent
 
 
 def get_resource_path(relative_path=""):
@@ -41,14 +40,14 @@ def get_resource_path(relative_path=""):
     """
     if hasattr(sys, '_MEIPASS'):
         # Running as bundled exe - resources are in _MEIPASS/resources/
-        base_path = os.path.join(sys._MEIPASS, 'resources')
+        base_path = Path(sys._MEIPASS) / 'resources'
     else:
         # Running as script - resources are in src/resources/
-        base_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resources')
+        base_path = Path(__file__).parent.parent / 'resources'
 
     if relative_path:
-        return os.path.join(base_path, relative_path)
-    return base_path
+        return str(base_path / relative_path)
+    return str(base_path)
 
 
 def get_app_data_path(subdir=""):

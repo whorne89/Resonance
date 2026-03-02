@@ -3,9 +3,9 @@ System tray interface for Resonance.
 Provides minimal UI with icon and context menu.
 """
 
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
-from PySide6.QtGui import QIcon, QAction
-from PySide6.QtCore import Signal, QObject, Qt
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
+from PySide6.QtCore import Signal, Qt
 from pathlib import Path
 
 from utils.resource_path import get_resource_path
@@ -54,9 +54,6 @@ class SystemTrayIcon(QSystemTrayIcon):
 
     def load_icons(self):
         """Load or create tray icons."""
-        from PySide6.QtGui import QPixmap, QPainter, QColor
-        from PySide6.QtCore import Qt
-
         icon_idle_path = self.icon_dir / "tray_idle.png"
         icon_recording_path = self.icon_dir / "tray_recording.png"
 
@@ -87,9 +84,6 @@ class SystemTrayIcon(QSystemTrayIcon):
         Returns:
             QIcon with simple colored circle
         """
-        from PySide6.QtGui import QPixmap, QPainter, QColor
-        from PySide6.QtCore import Qt
-
         # Create a 32x32 pixmap
         pixmap = QPixmap(32, 32)
         pixmap.fill(Qt.GlobalColor.transparent)

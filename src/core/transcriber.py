@@ -3,9 +3,10 @@ Whisper transcription module using faster-whisper.
 Provides speech-to-text transcription with optimized performance.
 """
 
-import numpy as np
-import threading
+import math
 import os
+import shutil
+import threading
 
 # Suppress HuggingFace symlinks warning on Windows
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -118,7 +119,7 @@ class Transcriber:
                 language=language,
                 beam_size=5,
                 vad_filter=False,
-                initial_prompt=initial_prompt or None,
+                initial_prompt=initial_prompt,
             )
 
             # Combine all segments into single text
@@ -131,7 +132,6 @@ class Transcriber:
             result = " ".join(text_parts).strip()
 
             # Convert avg log probability to 0-100% confidence
-            import math
             if logprobs:
                 avg_logprob = sum(logprobs) / len(logprobs)
                 self.last_confidence = min(1.0, math.exp(avg_logprob))
@@ -149,6 +149,60 @@ class Transcriber:
     def is_loaded(self):
         """Check if model is currently loaded."""
         return self.model is not None
+
+    def clean_partial_download(self, model_size):
+        """
+        Remove partially downloaded model files so a fresh download can succeed.
+
+        Checks for .incomplete files in blobs/ or missing model.bin in snapshots/.
+        If partial state is found, removes the entire model cache directory.
+
+        Args:
+            model_size: Model ID — short name or full HuggingFace repo ID.
+
+        Returns:
+            bool: True if a partial download was cleaned up, False otherwise.
+        """
+        if '/' in model_size:
+            cache_name = "models--" + model_size.replace('/', '--')
+        else:
+            cache_name = f"models--Systran--faster-whisper-{model_size}"
+        model_path = os.path.join(self.models_dir, cache_name)
+
+        if not os.path.isdir(model_path):
+            return False
+
+        # Check for .incomplete files in blobs/
+        blobs_dir = os.path.join(model_path, "blobs")
+        has_incomplete = False
+        if os.path.isdir(blobs_dir):
+            for fname in os.listdir(blobs_dir):
+                if fname.endswith(".incomplete"):
+                    has_incomplete = True
+                    break
+
+        # Check that at least one snapshot has a model.bin
+        has_model_bin = False
+        snapshots_dir = os.path.join(model_path, "snapshots")
+        if os.path.isdir(snapshots_dir):
+            for snap in os.listdir(snapshots_dir):
+                if os.path.isfile(os.path.join(snapshots_dir, snap, "model.bin")):
+                    has_model_bin = True
+                    break
+
+        # Directory exists but is in a partial state
+        if has_incomplete or (os.path.isdir(snapshots_dir) and not has_model_bin):
+            self.logger.info(f"Cleaning partial download for {model_size}: "
+                             f"incomplete={has_incomplete}, model_bin={has_model_bin}")
+            try:
+                shutil.rmtree(model_path)
+                self.logger.info(f"Removed partial download directory: {model_path}")
+                return True
+            except Exception as e:
+                self.logger.error(f"Failed to clean partial download: {e}")
+                return False
+
+        return False
 
     def is_model_downloaded(self, model_size):
         """

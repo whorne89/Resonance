@@ -4,10 +4,9 @@ Handles loading, saving, and validating user settings.
 """
 
 import json
-import os
 from pathlib import Path
 
-from utils.resource_path import get_resource_path, get_app_data_path, is_bundled
+from utils.resource_path import get_app_data_path
 
 
 def format_hotkey_display(hotkey):
@@ -23,24 +22,13 @@ def format_hotkey_display(hotkey):
     if not hotkey:
         return ""
 
-    # Split by + and capitalize each part
-    parts = hotkey.split('+')
-    formatted_parts = []
+    _MODIFIER_DISPLAY = {'ctrl': 'Ctrl', 'alt': 'Alt', 'shift': 'Shift', 'win': 'Win'}
 
-    for part in parts:
-        part = part.strip().lower()
-        # Capitalize modifier keys properly
-        if part == 'ctrl':
-            formatted_parts.append('Ctrl')
-        elif part == 'alt':
-            formatted_parts.append('Alt')
-        elif part == 'shift':
-            formatted_parts.append('Shift')
-        elif part == 'win':
-            formatted_parts.append('Win')
-        else:
-            # Regular keys - uppercase
-            formatted_parts.append(part.upper())
+    parts = hotkey.split('+')
+    formatted_parts = [
+        _MODIFIER_DISPLAY.get(p.strip().lower(), p.strip().upper())
+        for p in parts
+    ]
 
     return '+'.join(formatted_parts)
 
