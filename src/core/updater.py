@@ -139,9 +139,9 @@ class UpdateChecker:
         """
         Apply an update for bundled EXE installs.
 
-        Extracts the ZIP to a temp directory, writes a batch script that
-        waits for this process to exit, copies new files over, relaunches,
-        and cleans up.
+        Extracts the ZIP to the system temp directory, writes a batch script
+        that waits for this process to exit, copies new files over the
+        existing install, relaunches, and cleans up.
 
         Args:
             downloaded_path: Path to the downloaded .zip file.
@@ -154,44 +154,63 @@ class UpdateChecker:
             return False
 
         try:
-            # Extract to a temp directory next to the app
             app_dir = os.path.dirname(sys.executable)
-            extract_dir = tempfile.mkdtemp(prefix="resonance_update_", dir=app_dir)
+
+            # Extract to system temp (not inside app dir) to avoid clutter
+            temp_root = tempfile.mkdtemp(prefix="resonance_update_")
 
             with zipfile.ZipFile(downloaded_path, "r") as zf:
-                zf.extractall(extract_dir)
+                zf.extractall(temp_root)
 
             # If the ZIP contains a single top-level folder, use its contents
-            entries = os.listdir(extract_dir)
-            if len(entries) == 1 and os.path.isdir(os.path.join(extract_dir, entries[0])):
-                extract_dir = os.path.join(extract_dir, entries[0])
+            source_dir = temp_root
+            entries = os.listdir(temp_root)
+            if len(entries) == 1 and os.path.isdir(os.path.join(temp_root, entries[0])):
+                source_dir = os.path.join(temp_root, entries[0])
 
             pid = os.getpid()
             exe_path = sys.executable
-            zip_path = downloaded_path
 
-            # Write batch script
-            bat_path = os.path.join(app_dir, "_resonance_update.bat")
+            # Write batch script to system temp
+            bat_path = os.path.join(tempfile.gettempdir(), "_resonance_update.bat")
+            log_path = os.path.join(tempfile.gettempdir(), "_resonance_update.log")
+
             bat_content = (
                 "@echo off\n"
+                f'echo [%date% %time%] Update script started > "{log_path}"\n'
+                f'echo [%date% %time%] Waiting for PID {pid} to exit >> "{log_path}"\n'
                 ":waitloop\n"
                 f'tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL\n'
-                "if not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto waitloop)\n"
-                f'xcopy /E /Y /Q "{extract_dir}\\*" "{app_dir}\\"\n'
+                "if not errorlevel 1 (\n"
+                "    timeout /t 1 /nobreak >NUL\n"
+                "    goto waitloop\n"
+                ")\n"
+                f'echo [%date% %time%] Process exited, copying files >> "{log_path}"\n'
+                f'xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >> "{log_path}" 2>&1\n'
+                f'echo [%date% %time%] xcopy exit code: %errorlevel% >> "{log_path}"\n'
+                f'echo [%date% %time%] Relaunching >> "{log_path}"\n'
                 f'start "" "{exe_path}"\n'
-                f'rd /S /Q "{extract_dir}" 2>NUL\n'
-                f'del /F /Q "{zip_path}" 2>NUL\n'
+                f'rd /S /Q "{temp_root}" 2>NUL\n'
+                f'del /F /Q "{downloaded_path}" 2>NUL\n'
+                f'echo [%date% %time%] Cleanup done >> "{log_path}"\n'
                 '(goto) 2>NUL & del /F /Q "%~f0"\n'
             )
 
             with open(bat_path, "w", encoding="utf-8") as f:
                 f.write(bat_content)
 
-            # Launch the batch script detached
+            self.logger.info(f"Update script: {bat_path}")
+            self.logger.info(f"Source: {source_dir} -> {app_dir}")
+
+            # Launch the batch script as a new process group so it survives
+            # our exit. CREATE_NEW_PROCESS_GROUP keeps it alive;
+            # CREATE_NO_WINDOW suppresses the console.
             subprocess.Popen(
                 ["cmd.exe", "/c", bat_path],
-                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
-                close_fds=True,
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.CREATE_NO_WINDOW
+                ),
             )
 
             self.logger.info("Update script launched, application will restart")
