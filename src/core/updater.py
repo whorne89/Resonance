@@ -185,7 +185,14 @@ class UpdateChecker:
                 "    timeout /t 1 /nobreak >NUL\n"
                 "    goto waitloop\n"
                 ")\n"
-                f'echo [%date% %time%] Process exited, copying files >> "{log_path}"\n'
+                f'echo [%date% %time%] Process exited, cleaning old dist-info >> "{log_path}"\n'
+                f'pushd "{app_dir}\\_internal"\n'
+                f'for /D %%d in (resonance-*.dist-info) do (\n'
+                f'    echo [%date% %time%] Removing %%d >> "{log_path}"\n'
+                f'    rd /S /Q "%%d" 2>NUL\n'
+                f')\n'
+                f'popd\n'
+                f'echo [%date% %time%] Copying new files >> "{log_path}"\n'
                 f'xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >> "{log_path}" 2>&1\n'
                 f'echo [%date% %time%] xcopy exit code: %errorlevel% >> "{log_path}"\n'
                 f'echo [%date% %time%] Relaunching >> "{log_path}"\n'

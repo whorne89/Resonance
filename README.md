@@ -218,6 +218,9 @@ MIT License
 
 ## Changelog
 
+### v3.1.6
+- **Fix: auto-update applies but version unchanged (infinite update loop)** — The update batch script used `xcopy` to copy new files over old, but xcopy doesn't delete files that no longer exist. Both old and new `resonance-*.dist-info/` directories coexisted in `_internal/`, and `importlib.metadata.version()` found the old version first alphabetically. The app still thought it was on the old version and offered the update again in a loop. Fixed by deleting all old `resonance-*.dist-info/` directories before copying new files
+
 ### v3.1.5
 - Auto-updater test release
 

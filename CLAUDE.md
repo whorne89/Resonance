@@ -20,7 +20,7 @@ src/
   main.py                    - App entry point, VTTApplication controller, transcription worker
   core/
     audio_recorder.py        - Audio capture using sounddevice, exposes current_rms
-    transcriber.py           - Whisper model loading and transcription
+    transcriber.py           - Whisper model loading and transcription (+ partial download cleanup)
     keyboard_typer.py        - Keyboard input simulation (type or paste)
     hotkey_manager.py        - Global hotkey registration (pynput)
     dictionary.py            - Post-transcription word replacement (exact + fuzzy)
@@ -28,17 +28,21 @@ src/
     screen_context.py        - OCR screen capture, app-type detection, name extraction
     learning_engine.py       - Self-learning per-app profiles (vocabulary, style metrics)
     sound_effects.py         - Notification tones via winsound (WAV files)
+    updater.py               - Auto-updater: GitHub Releases check, download, batch-script self-update
   gui/
     system_tray.py           - System tray icon with context menu
-    settings_dialog.py       - Settings UI (hotkey, model, audio, typing, dictionary)
+    settings_dialog.py       - Settings UI (hotkey, model, audio, typing, dictionary, updates)
     dictionary_dialog.py     - Custom dictionary editor UI
     recording_overlay.py     - Floating pill overlay with waveform visualization
+    update_toast.py          - Interactive update toast with Yes/No buttons + auto-dismiss
   utils/
     config.py                - ConfigManager (JSON settings)
     resource_path.py         - Path resolution (app data, resources)
     logger.py                - Logging with file rotation
   resources/
     icons/                   - Tray icons (idle, recording)
+    sounds/                  - Piano tone WAV files (start/stop)
+resonance.spec               - PyInstaller build spec (--onedir)
 ```
 
 ## Key Design Decisions
@@ -50,9 +54,10 @@ src/
 - **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
-- **Single source of truth**: `version` field in `pyproject.toml` (currently 3.0.0)
+- **Single source of truth**: `version` field in `pyproject.toml` (currently 3.1.6)
 - About dialog reads via `importlib.metadata.version('resonance')` — never hardcode version strings
 - Package must be installed in editable mode (`uv pip install -e .`) for importlib.metadata to work
+- In bundled EXE, version lives in `_internal/resonance-X.Y.Z.dist-info/` — only ONE such directory must exist or `importlib.metadata` picks the wrong version (alphabetically first)
 
 ## Transcription Flow
 1. User holds hotkey → start tone plays → AudioRecorder captures audio → overlay shows recording state
@@ -92,6 +97,17 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - `winsound.PlaySound` cannot combine `SND_MEMORY` + `SND_ASYNC` on Windows — must write WAV files to disk and use `SND_FILENAME | SND_ASYNC`
 - `uv pip install` may target system Python; use `--python .venv/Scripts/python.exe` to be safe
 
+### PySide6 Threading — Critical
+- **`QueuedConnection` on plain Python functions does NOT work.** There is no receiver QObject to determine the target thread, so callbacks silently run on the worker thread regardless. Qt widgets created/modified from non-GUI threads crash or silently fail.
+- **Fix: relay signals through QObject instances.** Worker signal → QObject relay signal → callback. `VTTApplication` (a QObject) has relay signals (`_relay_model_loaded`, `_relay_update`, `_relay_dl_progress`, etc.) that re-emit on the main thread. `AutoConnection` works correctly when both sender and receiver are QObjects.
+- **In dialogs/widgets**, convert closures to bound methods on the QWidget/QDialog (which is a QObject). E.g. `worker.signal.connect(self._on_result)` instead of `worker.signal.connect(lambda: ...)`.
+- **Symptom of wrong thread**: toast/widget "shows" (logs say success) but is invisible, or app crashes with segfault on signal emit.
+
+### Windows Batch Script Gotchas
+- **`for /D %%d in ("path\with\*.glob")` does NOT expand wildcards** — quotes make the pattern literal. Fix: `pushd "path\with"` then `for /D %%d in (*.glob)` with an unquoted relative pattern, then `popd`.
+- **`DETACHED_PROCESS`** flag for `subprocess.Popen` silently fails on some Windows machines. Use `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` instead.
+- Write batch scripts and extracted update files to **system temp** (`tempfile.gettempdir()`), not inside the app directory.
+
 ## Post-Processing
 - **Backend**: llama-server (llama.cpp) with Qwen 2.5 1.5B Instruct GGUF (q4_k_m, ~1.1 GB)
 - **Scope**: Grammar, capitalization, punctuation (periods, commas, question marks, quotation marks), contractions, sentence breaks, filler word removal (um, uh), and stutter/repeat cleanup
@@ -127,13 +143,37 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - **Thread safety**: All mutations through `threading.Lock()` (same pattern as PostProcessor)
 - **Overlay badges**: OSR-only shows generic type ("Chat", "Email"); self-learning shows specific app name ("Discord", "Outlook"). Hidden for "General" type
 
+## Portable EXE (PyInstaller)
+- **Build**: `pyinstaller resonance.spec -y` produces `dist/Resonance/Resonance.exe` (`--onedir`)
+- **Spec** (`resonance.spec`): entry `src/main.py`, pathex `src/`, bundles icons + sounds, `collect_all('faster_whisper')` + `collect_all('ctranslate2')`, `copy_metadata('resonance')`, hidden imports for sounddevice/pynput, `console=False`
+- **Detection**: `is_bundled()` checks `hasattr(sys, '_MEIPASS')`. `sys.executable` = the EXE path, `sys._MEIPASS` = temp extraction dir
+- **SSL fix**: Spec force-bundles Python's own `libssl-3.dll`/`libcrypto-3.dll` to avoid PySide6 OpenSSL DLL mismatch
+- **stderr redirect**: PyInstaller windowed mode sets `sys.stderr = None`. `main.py` redirects to devnull to prevent tqdm/huggingface_hub crashes during model download
+- **Build command**: `uv pip install -e . --python .venv/Scripts/python.exe && .venv/Scripts/pyinstaller.exe resonance.spec -y`
+
+## Auto-Updater
+- **Check**: `UpdateChecker` in `core/updater.py` hits GitHub Releases API (`/repos/whorne89/Resonance/releases/latest`), compares versions via `packaging.version.Version`, finds `.zip` asset
+- **Startup flow**: `QTimer.singleShot(8000, _start_update_check)` in `main()` → `_UpdateCheckWorker` runs in QThread → on update found, shows `UpdateToast` (interactive Yes/No, 10s auto-dismiss)
+- **Download**: On accept, shows `_UpdateDownloadDialog` (progress bar) → downloads ZIP to `.resonance/updates/`
+- **Apply (EXE only)**: `apply_update()` extracts ZIP to system temp, writes `_resonance_update.bat` that: waits for PID exit → `pushd _internal` + delete old `resonance-*.dist-info` via `for /D` → `popd` → `xcopy /E /Y /Q` new files → `start` EXE → cleanup temp + ZIP + self-delete
+- **Source installs**: Shows "Run: git pull && uv sync" message instead of download
+- **Settings**: "Check for Updates" button + version label in updates group. Uses `_UpdateCheckWorker` / `_UpdateDownloadDialog` with bound methods (not closures) for thread safety
+- **Signal relay**: All worker signals route through `VTTApplication` relay signals to ensure callbacks run on the main GUI thread (see PySide6 Threading gotcha)
+- **GitHub Release setup**: Tag with `vX.Y.Z`, attach `Resonance.zip` asset. The ZIP's `_internal/resonance-X.Y.Z.dist-info/` must match the tag version — mismatched versions cause infinite update loops
+- **Testing**: Must build separate ZIPs for each version. A "dummy" test release reusing the same ZIP will loop because `importlib.metadata.version()` reads the dist-info from inside the ZIP, not the GitHub tag
+
+## Download Auto-Recovery
+- **Partial download cleanup**: `transcriber.clean_partial_download(model_size)` detects `.incomplete` blobs or missing `model.bin` in HF cache snapshots → `shutil.rmtree()` the entire model cache dir
+- **Called at**: startup in `main()` before `is_model_downloaded()` check, and in `_DownloadWorker.run()` before `snapshot_download()`
+
 ## UI Components (v3.0)
-- **ToastNotification**: Dark pill at bottom-right, supports multi-line messages + bold details section. "Resonance" header at 15px bold.
+- **ToastNotification**: Dark pill at bottom-right, supports multi-line messages + bold details section. "Resonance" header at 15px bold. `WindowTransparentForInput` (click-through).
+- **UpdateToast**: Same visual style as ToastNotification but NOT click-through — has interactive Yes/No buttons. 10-second auto-dismiss timer. Signals: `accepted()`, `dismissed()`.
 - **ClipboardToast**: Centered pill at bottom (240×52), shows "Text entered" (clipboard) or "Typing" (char-by-char) at 24px
 - **RecordingOverlay**: Pill at bottom-center with waveform. During recording: stacked feature badges (e.g. "Learning OSR: ON", "Post-Processing: ON"). During typing/pasted: detected app badge + estimated accuracy badge. Hidden for "General" type
 - **AboutDialog**: RoundedDialog with 28px title, subtitle, description mentioning Whisper + Qwen, author, version from importlib.metadata
 - **Startup toast**: Shows hotkey, model name, OSR status (with learning indicator), post-processing status, and entry method (details in bold)
-- **Settings**: Dependency-chained toggles (PP → OSR → Self-Learning) with grayed-out labels showing requirements. Learning stats cards: Apps Learned, Words Learned, Top App, Avg Confidence
+- **Settings**: Dependency-chained toggles (PP → OSR → Self-Learning) with grayed-out labels showing requirements. Learning stats cards: Apps Learned, Words Learned, Top App, Avg Confidence. Updates group: version label, Check for Updates button, Download and Install button (EXE only)
 
 ## Future: macOS Support
 - **Goal**: Single Python codebase that runs on both Windows and Mac
