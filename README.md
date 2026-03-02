@@ -74,7 +74,7 @@ Right-click the system tray icon and select **Settings** to configure:
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
-- **winocr**: Windows native OCR for screen context capture
+- **paddleocr**: Cross-platform OCR for screen context capture
 - **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation
 - **pyperclip**: Clipboard-based text entry

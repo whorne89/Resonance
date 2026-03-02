@@ -8,7 +8,7 @@ Resonance is a Windows voice-to-text desktop application that uses Whisper (via 
 - **GUI**: PySide6 (Qt for Python)
 - **Audio**: sounddevice (recording), winsound (notification tones)
 - **Transcription**: faster-whisper (CTranslate2 backend, CPU only)
-- **OCR**: winocr (Windows native OCR), mss (screenshot capture)
+- **OCR**: paddleocr (cross-platform OCR with pure Python), mss (screenshot capture)
 - **Hotkeys**: pynput
 - **Typing output**: pynput keyboard + pyperclip
 - **Threading**: QThread for async transcription
@@ -119,7 +119,7 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 - **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
 
 ## Screen Context (OCR)
-- **Backend**: winocr (Windows native OCR engine), mss (screenshot capture)
+- **Backend**: paddleocr (cross-platform OCR via PaddleOCR), mss (screenshot capture)
 - **Scope**: Captures active window text on hotkey press to (1) extract proper nouns for Whisper vocabulary hints via `initial_prompt`, (2) detect app type (CHAT, EMAIL, CODE, DOCUMENT, GENERAL) for format-specific post-processing prompts
 - **Architecture**: `ScreenContextEngine` in `core/screen_context.py`. Runs in background thread during recording (~56ms total). Returns `ScreenContext` dataclass with raw_text, app_type, proper_nouns, window_title
 - **App detection**: Heuristic keyword matching on window title + OCR text (e.g. "Discord" → CHAT, "Outlook" → EMAIL, "Visual Studio" → CODE, "cmd.exe" → TERMINAL)
