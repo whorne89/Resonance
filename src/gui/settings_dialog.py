@@ -706,6 +706,10 @@ class SettingsDialog(RoundedDialog):
         bug_report_group = self.create_bug_report_group()
         content_layout.addWidget(bug_report_group)
 
+        # Debug
+        debug_group = self.create_debug_group()
+        content_layout.addWidget(debug_group)
+
         content_widget.setLayout(content_layout)
         scroll_area.setWidget(content_widget)
         outer_layout.addWidget(scroll_area, 1)
@@ -1122,6 +1126,95 @@ class SettingsDialog(RoundedDialog):
         group.setLayout(layout)
         return group
 
+    def create_debug_group(self):
+        """Create debug mode configuration group."""
+        group = QGroupBox("Debug")
+        layout = QVBoxLayout()
+
+        # Master toggle
+        self.debug_enabled_cb = QCheckBox("Enable Debug Mode")
+        debug_desc = QLabel(
+            "Development tools for monitoring and refining transcription quality."
+        )
+        debug_desc.setWordWrap(True)
+        debug_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        layout.addWidget(self.debug_enabled_cb)
+        layout.addWidget(debug_desc)
+
+        # Sub-options container (hidden when debug mode off)
+        self._debug_options_widget = QWidget()
+        debug_options_layout = QVBoxLayout()
+        debug_options_layout.setContentsMargins(20, 4, 0, 0)
+
+        # Logging toggle
+        self.debug_logging_cb = QCheckBox("Log Full Pipeline Data")
+        logging_desc = QLabel(
+            "Saves detailed session data for every transcription \u2014 audio stats, "
+            "OCR results, Whisper output, post-processing changes, and final text."
+        )
+        logging_desc.setWordWrap(True)
+        logging_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        debug_options_layout.addWidget(self.debug_logging_cb)
+        debug_options_layout.addWidget(logging_desc)
+
+        # Live panel toggle
+        self.debug_panel_cb = QCheckBox("Live Debug Panel")
+        panel_desc = QLabel(
+            "Shows real-time pipeline info in the corner during transcription."
+        )
+        panel_desc.setWordWrap(True)
+        panel_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+        debug_options_layout.addWidget(self.debug_panel_cb)
+        debug_options_layout.addWidget(panel_desc)
+
+        # Report button
+        report_row = QHBoxLayout()
+        self._debug_report_btn = QPushButton("Open Comparison Report")
+        self._debug_report_btn.setEnabled(False)
+        self._debug_report_btn.clicked.connect(self._open_debug_report)
+        report_row.addWidget(self._debug_report_btn)
+        report_row.addStretch()
+        debug_options_layout.addLayout(report_row)
+
+        self._debug_session_count = QLabel("")
+        self._debug_session_count.setStyleSheet("color: rgba(255, 255, 255, 100); font-size: 11px;")
+        debug_options_layout.addWidget(self._debug_session_count)
+
+        self._debug_options_widget.setLayout(debug_options_layout)
+        layout.addWidget(self._debug_options_widget)
+
+        # Wire dependency: debug mode gates sub-options
+        self.debug_enabled_cb.stateChanged.connect(self._on_debug_toggled)
+        self.debug_logging_cb.stateChanged.connect(self._on_debug_logging_toggled)
+
+        group.setLayout(layout)
+        return group
+
+    def _on_debug_toggled(self, state=None):
+        """Show/hide debug sub-options based on master toggle."""
+        enabled = self.debug_enabled_cb.isChecked()
+        self._debug_options_widget.setVisible(enabled)
+        if not enabled:
+            self.debug_logging_cb.setChecked(False)
+            self.debug_panel_cb.setChecked(False)
+
+    def _on_debug_logging_toggled(self, state=None):
+        """Enable/disable report button based on logging toggle."""
+        self._debug_report_btn.setEnabled(self.debug_logging_cb.isChecked())
+
+    def _open_debug_report(self):
+        """Generate and open the HTML comparison report."""
+        from core.debug_manager import DebugManager
+        dm = DebugManager(logging_enabled=True)
+        count = dm.get_session_count()
+        if count == 0:
+            MessageBox.information(
+                self, "No Data",
+                "No debug sessions recorded yet. Enable logging and use Resonance to collect data."
+            )
+            return
+        dm.generate_report()
+
     def _open_bug_report(self):
         """Collect system info and open a pre-filled GitHub issue in the browser."""
         # App version
@@ -1412,6 +1505,22 @@ class SettingsDialog(RoundedDialog):
             self.learning_cb.setEnabled(False)
             self.learning_cb.setText(f"{self._learning_label_base} (requires Post-Processing and OSR)")
 
+        # Debug mode
+        self.debug_enabled_cb.setChecked(self.config.get_debug_enabled())
+        self.debug_logging_cb.setChecked(self.config.get_debug_logging_enabled())
+        self.debug_panel_cb.setChecked(self.config.get_debug_live_panel_enabled())
+        self._on_debug_toggled()  # Apply visibility
+        self._on_debug_logging_toggled()  # Apply report button state
+
+        # Update session count label
+        from core.debug_manager import DebugManager
+        dm = DebugManager()
+        count = dm.get_session_count()
+        if count > 0:
+            self._debug_session_count.setText(f"{count} session(s) logged")
+        else:
+            self._debug_session_count.setText("")
+
     def save_settings(self):
         """Save settings and emit signal."""
         try:
@@ -1423,6 +1532,9 @@ class SettingsDialog(RoundedDialog):
             pp_enabled = self.post_processing_cb.isChecked()
             ocr_enabled = self.ocr_cb.isChecked()
             learning_enabled = self.learning_cb.isChecked()
+            debug_enabled = self.debug_enabled_cb.isChecked()
+            debug_logging = self.debug_logging_cb.isChecked()
+            debug_panel = self.debug_panel_cb.isChecked()
 
             # Validate hotkey (just check it's not empty)
             if not hotkey:
@@ -1458,6 +1570,16 @@ class SettingsDialog(RoundedDialog):
                 changes.append(f"OSR \u2192 {'On' if ocr_enabled else 'Off'}")
             if learning_enabled != old_learning:
                 changes.append(f"Self-Learning \u2192 {'On' if learning_enabled else 'Off'}")
+
+            old_debug = self.config.get_debug_enabled()
+            old_debug_logging = self.config.get_debug_logging_enabled()
+            old_debug_panel = self.config.get_debug_live_panel_enabled()
+            if debug_enabled != old_debug:
+                changes.append(f"Debug Mode \u2192 {'On' if debug_enabled else 'Off'}")
+            if debug_logging != old_debug_logging:
+                changes.append(f"Debug Logging \u2192 {'On' if debug_logging else 'Off'}")
+            if debug_panel != old_debug_panel:
+                changes.append(f"Debug Panel \u2192 {'On' if debug_panel else 'Off'}")
 
             # Nothing changed — just close
             if not changes:
@@ -1501,6 +1623,9 @@ class SettingsDialog(RoundedDialog):
             self.config.set_post_processing_enabled(pp_enabled)
             self.config.set_ocr_enabled(ocr_enabled)
             self.config.set_learning_enabled(learning_enabled)
+            self.config.set_debug_enabled(debug_enabled)
+            self.config.set_debug_logging_enabled(debug_logging)
+            self.config.set_debug_live_panel_enabled(debug_panel)
             self.config.save()
 
             # Emit signal

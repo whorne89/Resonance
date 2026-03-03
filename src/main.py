@@ -20,6 +20,7 @@ from datetime import date
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QPushButton
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
 
+from core.debug_manager import DebugManager
 from core.audio_recorder import AudioRecorder
 from core.transcriber import Transcriber
 from core.keyboard_typer import KeyboardTyper
@@ -54,10 +55,11 @@ class TranscriptionWorker(QObject):
 
     finished = Signal(str, float)  # Emits transcribed text + confidence (0.0-1.0)
     error = Signal(str)  # Emits error message
+    debug_info = Signal(dict)  # Emits debug data collected during run
 
     def __init__(self, transcriber, audio_data, post_processor=None, logger=None,
                  ocr_context=None, learned_vocabulary=None, style_suffix=None,
-                 spoken_punctuation=False):
+                 spoken_punctuation=False, debug_enabled=False):
         super().__init__()
         self.transcriber = transcriber
         self.audio_data = audio_data
@@ -67,6 +69,8 @@ class TranscriptionWorker(QObject):
         self.learned_vocabulary = learned_vocabulary or []
         self.style_suffix = style_suffix
         self.spoken_punctuation = spoken_punctuation
+        self.debug_enabled = debug_enabled
+        self._debug_data = {}
 
     def run(self):
         """Run transcription."""
@@ -106,12 +110,22 @@ class TranscriptionWorker(QObject):
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
 
+            if self.debug_enabled:
+                self._debug_data["whisper_raw"] = text
+                self._debug_data["whisper_confidence"] = getattr(self.transcriber, 'last_confidence', 0.0)
+                self._debug_data["whisper_model"] = getattr(self.transcriber, 'model_size', '')
+                self._debug_data["initial_prompt"] = initial_prompt or ""
+
             # Clean comma spam from Whisper output (always on)
             if text:
                 original = text
                 text = clean_comma_spam(text)
                 if text != original and self.logger:
                     self.logger.info(f"Comma spam cleaned: '{original}' -> '{text}'")
+
+            if self.debug_enabled:
+                self._debug_data["after_comma_clean"] = text
+                self._debug_data["comma_spam_triggered"] = (text != original) if text else False
 
             # Replace spoken punctuation (e.g., "slash" -> "/")
             # Only in terminal/code contexts where symbols are expected
@@ -121,6 +135,12 @@ class TranscriptionWorker(QObject):
                     text = replace_spoken_punctuation(text)
                     if text != original and self.logger:
                         self.logger.info(f"Spoken punctuation: '{original}' -> '{text}'")
+
+            if self.debug_enabled:
+                self._debug_data["spoken_punctuation_applied"] = (
+                    text != self._debug_data.get("after_comma_clean", text)
+                ) if text else False
+                self._debug_data["after_text_cleanup"] = text
 
             # Guard: detect Whisper hallucinating from initial_prompt
             # If transcription is short and mostly contains OCR nouns, it's not real speech
@@ -138,11 +158,19 @@ class TranscriptionWorker(QObject):
                         text = ""
 
             if text and self.post_processor:
+                original_before_pp = text
                 if self.logger:
                     self.logger.info("Running post-processing...")
                 text = self.post_processor.process(text, system_prompt=system_prompt)
                 if self.logger:
                     self.logger.info(f"Post-processing finished, got {len(text)} characters")
+
+                if self.debug_enabled:
+                    self._debug_data["pp_input"] = original_before_pp
+                    self._debug_data["pp_output"] = text
+                    self._debug_data["pp_system_prompt_type"] = (
+                        self.ocr_context.app_type.value if self.ocr_context else ""
+                    )
 
             # Apply structural formatting based on app type
             if self.ocr_context and text:
@@ -150,6 +178,8 @@ class TranscriptionWorker(QObject):
                     text = ScreenContextEngine.apply_chat_formatting(text)
 
             confidence = getattr(self.transcriber, 'last_confidence', 0.0)
+            if self.debug_enabled:
+                self.debug_info.emit(self._debug_data)
             self.finished.emit(text, confidence)
         except Exception as e:
             if self.logger:
@@ -279,6 +309,11 @@ class VTTApplication(QObject):
         if self.config.get_learning_enabled() and self.screen_context is not None:
             self.learning_engine = LearningEngine()
 
+        # Debug manager (created if debug mode enabled)
+        self.debug_manager = None
+        self.debug_panel = None
+        self._init_debug()
+
         # Set audio device from config
         device_idx = self.config.get_audio_device()
         if device_idx is not None:
@@ -319,10 +354,47 @@ class VTTApplication(QObject):
             if self.tray_icon:
                 self.tray_icon.show_error(f"Failed to register hotkey: {e}")
 
+    def _init_debug(self):
+        """Initialize or tear down debug manager based on config."""
+        debug_enabled = self.config.get_debug_enabled()
+
+        if debug_enabled:
+            if self.debug_manager is None:
+                self.debug_manager = DebugManager(
+                    logging_enabled=self.config.get_debug_logging_enabled(),
+                    live_panel_enabled=self.config.get_debug_live_panel_enabled(),
+                )
+
+                # Create live panel if enabled
+                if self.config.get_debug_live_panel_enabled():
+                    from gui.debug_panel import DebugPanel
+                    self.debug_panel = DebugPanel()
+                    # Connect signals
+                    self.debug_manager.recording_started.connect(self.debug_panel.on_recording_started)
+                    self.debug_manager.ocr_completed.connect(self.debug_panel.on_ocr_completed)
+                    self.debug_manager.transcription_completed.connect(self.debug_panel.on_transcription_completed)
+                    self.debug_manager.post_processing_completed.connect(self.debug_panel.on_post_processing_completed)
+                    self.debug_manager.text_cleanup_completed.connect(self.debug_panel.on_text_cleanup_completed)
+                    self.debug_manager.dictionary_completed.connect(self.debug_panel.on_dictionary_completed)
+                    self.debug_manager.session_completed.connect(self.debug_panel.on_session_completed)
+            else:
+                # Update settings on existing manager
+                self.debug_manager.logging_enabled = self.config.get_debug_logging_enabled()
+                self.debug_manager.live_panel_enabled = self.config.get_debug_live_panel_enabled()
+        else:
+            if self.debug_panel:
+                self.debug_panel.dismiss()
+                self.debug_panel.deleteLater()
+                self.debug_panel = None
+            self.debug_manager = None
+
     def on_hotkey_press(self):
         """Called when hotkey is pressed - start recording."""
         try:
             self.logger.info("Hotkey pressed - starting recording")
+
+            if self.debug_manager:
+                self.debug_manager.start_session()
 
             # Play start tone before recording to avoid capturing it
             self.sound_effects.play_start_tone()
@@ -334,6 +406,12 @@ class VTTApplication(QObject):
                 def _capture_ocr():
                     try:
                         self._current_ocr_context = self.screen_context.capture()
+                        if self._current_ocr_context and self.debug_manager:
+                            ctx = self._current_ocr_context
+                            self.debug_manager.record_ocr(
+                                ctx.app_type.value, ctx.window_title,
+                                ctx.proper_nouns, len(ctx.raw_text),
+                            )
                         # Feed learning engine with OCR data
                         if self._current_ocr_context and self.learning_engine:
                             ctx = self._current_ocr_context
@@ -380,6 +458,13 @@ class VTTApplication(QObject):
 
             self.logger.info(f"Audio recorded: {len(audio_data)} samples")
             self._last_audio_samples = len(audio_data)
+
+            if self.debug_manager:
+                duration = len(audio_data) / self.audio_recorder.sample_rate
+                self.debug_manager.record_audio(
+                    duration, self.audio_recorder.current_rms,
+                    self.audio_recorder.sample_rate,
+                )
 
             # Update UI to transcribing state
             if self.tray_icon:
@@ -442,6 +527,17 @@ class VTTApplication(QObject):
             if style_suffix:
                 self.logger.info(f"Learning: style hints: {style_suffix}")
 
+        if self.debug_manager:
+            self.debug_manager.record_learning(
+                enabled=self.learning_engine is not None,
+                app_key=self.learning_engine.get_profile(
+                    self._current_ocr_context.window_title
+                ).app_key if self.learning_engine and self._current_ocr_context else None,
+                vocabulary_injected=learned_vocabulary,
+                style_suffix=style_suffix,
+            )
+            self.debug_manager.start_step()  # Start timing for transcription
+
         # Create worker and thread
         self.transcription_thread = QThread()
         self.transcription_worker = TranscriptionWorker(
@@ -450,6 +546,7 @@ class VTTApplication(QObject):
             learned_vocabulary=learned_vocabulary,
             style_suffix=style_suffix,
             spoken_punctuation=self.config.get_spoken_punctuation_enabled(),
+            debug_enabled=self.debug_manager is not None,
         )
 
         # Move worker to thread
@@ -459,6 +556,8 @@ class VTTApplication(QObject):
         self.transcription_thread.started.connect(self.transcription_worker.run)
         self.transcription_worker.finished.connect(self.on_transcription_complete)
         self.transcription_worker.error.connect(self.on_transcription_error)
+        if self.debug_manager:
+            self.transcription_worker.debug_info.connect(self._on_debug_info)
 
         # Cleanup must happen after completion/error handlers finish.
         # Use QueuedConnection to ensure these run on the main thread (not the worker thread),
@@ -473,6 +572,38 @@ class VTTApplication(QObject):
         # Start thread
         self.transcription_thread.start()
 
+    def _on_debug_info(self, data):
+        """Process debug data from transcription worker."""
+        if not self.debug_manager:
+            return
+
+        # Record transcription
+        self.debug_manager.start_step()  # Reset timer (already elapsed)
+        self.debug_manager.record_transcription(
+            model=data.get("whisper_model", ""),
+            raw_output=data.get("whisper_raw", ""),
+            confidence=data.get("whisper_confidence", 0.0),
+            initial_prompt=data.get("initial_prompt", ""),
+        )
+
+        # Record text cleanup
+        self.debug_manager.record_text_cleanup(
+            input_text=data.get("whisper_raw", ""),
+            output_text=data.get("after_text_cleanup", ""),
+            comma_spam_triggered=data.get("comma_spam_triggered", False),
+            spoken_punctuation_applied=data.get("spoken_punctuation_applied", False),
+        )
+
+        # Record post-processing
+        if data.get("pp_output") is not None:
+            self.debug_manager.record_post_processing(
+                input_text=data.get("pp_input", ""),
+                output_text=data.get("pp_output", ""),
+                system_prompt_type=data.get("pp_system_prompt_type", ""),
+            )
+        elif self.debug_panel:
+            self.debug_panel.on_post_processing_skipped()
+
     def on_transcription_complete(self, text, confidence=0.0):
         """
         Called when transcription is complete.
@@ -485,11 +616,17 @@ class VTTApplication(QObject):
 
         try:
             # Apply custom dictionary replacements
+            original = text
             if text:
-                original = text
                 text = self.dictionary.apply(text)
                 if text != original:
                     self.logger.info(f"Dictionary applied: '{original}' -> '{text}'")
+
+            if self.debug_manager:
+                self.debug_manager.record_dictionary(
+                    replacements_applied={} if not original or text == original else {"original": original, "replaced": text},
+                    output_text=text or "",
+                )
 
             # Update usage statistics
             if text:
@@ -531,6 +668,11 @@ class VTTApplication(QObject):
                             QApplication.processEvents()
                     else:
                         self.logger.warning("Text output failed")
+
+                    if self.debug_manager:
+                        method = "clipboard" if self.keyboard_typer.use_clipboard else "typing"
+                        self.debug_manager.record_delivery(method, len(text))
+                        self.debug_manager.finish_session(text)
                 except Exception as e:
                     self.logger.error(f"Error outputting text: {e}")
                     if self.tray_icon:
@@ -539,6 +681,8 @@ class VTTApplication(QObject):
                 self.logger.warning("Transcription returned empty text")
                 if self.overlay:
                     self.overlay.show_no_speech()
+                if self.debug_manager:
+                    self.debug_manager.finish_session("")
 
             # Reset UI
             if self.tray_icon:
@@ -685,6 +829,9 @@ class VTTApplication(QObject):
             if self.learning_engine:
                 self.learning_engine.save()
             self.learning_engine = None
+
+        # Refresh debug manager
+        self._init_debug()
 
         # Update overlay feature badges
         self._update_overlay_features()

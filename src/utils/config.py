@@ -79,6 +79,11 @@ class ConfigManager:
             "total_characters": 0,
             "first_used": None,
             "total_recording_seconds": 0.0
+        },
+        "debug": {
+            "enabled": False,
+            "logging_enabled": False,
+            "live_panel_enabled": False
         }
     }
 
@@ -334,3 +339,27 @@ class ConfigManager:
         """Reset configuration to defaults."""
         self.config = self.DEFAULT_CONFIG.copy()
         self.save()
+
+    def get_debug_enabled(self):
+        """Get whether debug mode is enabled."""
+        return self.get("debug", "enabled", default=False)
+
+    def set_debug_enabled(self, enabled):
+        """Set whether debug mode is enabled."""
+        self.set("debug", "enabled", value=enabled)
+
+    def get_debug_logging_enabled(self):
+        """Get whether debug session logging is enabled."""
+        return self.get("debug", "logging_enabled", default=False)
+
+    def set_debug_logging_enabled(self, enabled):
+        """Set whether debug session logging is enabled."""
+        self.set("debug", "logging_enabled", value=enabled)
+
+    def get_debug_live_panel_enabled(self):
+        """Get whether the live debug panel is enabled."""
+        return self.get("debug", "live_panel_enabled", default=False)
+
+    def set_debug_live_panel_enabled(self, enabled):
+        """Set whether the live debug panel is enabled."""
+        self.set("debug", "live_panel_enabled", value=enabled)
