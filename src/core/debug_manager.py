@@ -4,6 +4,8 @@ Handles session logging, pipeline step recording, and HTML report generation.
 Emits Qt signals for the live debug panel to consume.
 """
 
+import csv
+import html as html_mod
 import json
 import time
 import uuid
@@ -32,11 +34,13 @@ class DebugManager(QObject):
 
     # Signals for live debug panel updates
     recording_started = Signal(dict)    # {"timestamp": ..., "session_id": ...}
+    recording_stopped = Signal(dict)    # {"duration_seconds": ..., "sample_rate": ...}
     ocr_completed = Signal(dict)        # {"app_type": ..., "proper_nouns": ..., "timing_ms": ...}
     transcription_completed = Signal(dict)  # {"raw_output": ..., "confidence": ..., "timing_ms": ...}
     post_processing_completed = Signal(dict)  # {"input": ..., "output": ..., "timing_ms": ...}
     text_cleanup_completed = Signal(dict)    # {"input": ..., "output": ..., "comma_spam": ..., "spoken_punct": ...}
     dictionary_completed = Signal(dict)      # {"replacements_applied": ..., "output": ...}
+    learning_completed = Signal(dict)        # {"app_key": ..., "style_metrics": ..., "style_suffix": ...}
     session_completed = Signal(dict)         # full session dict
 
     def __init__(self, logging_enabled=False, live_panel_enabled=False):
@@ -100,6 +104,12 @@ class DebugManager(QObject):
             "sample_rate": sample_rate,
         }
 
+        if self._live_panel_enabled:
+            self.recording_stopped.emit({
+                "duration_seconds": round(duration_seconds, 2),
+                "sample_rate": sample_rate,
+            })
+
     def start_step(self):
         """Mark the start of a timed pipeline step."""
         self._step_start_time = time.perf_counter()
@@ -128,11 +138,11 @@ class DebugManager(QObject):
         if self._live_panel_enabled:
             self.ocr_completed.emit({**ocr_data, "timing_ms": elapsed})
 
-    def record_transcription(self, model, raw_output, confidence, initial_prompt):
+    def record_transcription(self, model, raw_output, confidence, initial_prompt, timing_ms=None):
         """Record Whisper transcription results."""
         if not self._current_session:
             return
-        elapsed = self._elapsed_ms()
+        elapsed = timing_ms if timing_ms is not None else self._elapsed_ms()
         whisper_data = {
             "model": model,
             "raw_output": raw_output,
@@ -145,11 +155,11 @@ class DebugManager(QObject):
         if self._live_panel_enabled:
             self.transcription_completed.emit({**whisper_data, "timing_ms": elapsed})
 
-    def record_post_processing(self, input_text, output_text, system_prompt_type):
+    def record_post_processing(self, input_text, output_text, system_prompt_type, timing_ms=None):
         """Record post-processing results."""
         if not self._current_session:
             return
-        elapsed = self._elapsed_ms()
+        elapsed = timing_ms if timing_ms is not None else self._elapsed_ms()
         pp_data = {
             "enabled": True,
             "input": input_text,
@@ -190,16 +200,24 @@ class DebugManager(QObject):
         if self._live_panel_enabled:
             self.dictionary_completed.emit(dict_data)
 
-    def record_learning(self, enabled, app_key, vocabulary_injected, style_suffix):
+    def record_learning(self, enabled, app_key, vocabulary_injected, style_suffix,
+                        style_metrics=None, sessions_count=0, confidence=0.0):
         """Record learning engine data."""
         if not self._current_session:
             return
-        self._current_session["learning"] = {
+        learning_data = {
             "enabled": enabled,
             "app_key": app_key or "",
             "vocabulary_injected": vocabulary_injected or [],
             "style_suffix": style_suffix or "",
+            "style_metrics": style_metrics or {},
+            "sessions_count": sessions_count,
+            "confidence": round(confidence, 2),
         }
+        self._current_session["learning"] = learning_data
+
+        if self._live_panel_enabled:
+            self.learning_completed.emit(learning_data)
 
     def record_delivery(self, method, char_count):
         """Record how text was delivered."""
@@ -259,7 +277,7 @@ class DebugManager(QObject):
         except Exception as e:
             self.logger.error(f"Failed to clean debug sessions: {e}")
 
-    # ── HTML report ──────────────────────────────────────────────────
+    # ── Reports ────────────────────────────────────────────────────
 
     def generate_report(self):
         """Generate an HTML comparison report and open in browser."""
@@ -268,9 +286,15 @@ class DebugManager(QObject):
             self.logger.warning("No debug sessions found for report")
             return False
 
-        html = self._build_html(sessions)
-        report_path = Path(get_app_data_path("debug")) / "comparison_report.html"
-        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_dir = Path(get_app_data_path("debug"))
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write CSV alongside the HTML
+        csv_path = report_dir / "sessions.csv"
+        self._write_csv(sessions, csv_path)
+
+        html = self._build_html(sessions, csv_path.name)
+        report_path = report_dir / "comparison_report.html"
 
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -293,39 +317,155 @@ class DebugManager(QObject):
                 continue
         return sessions
 
-    def _build_html(self, sessions):
+    def _extract_row(self, s):
+        """Extract a flat dict of display values from a session."""
+        timing = s.get("timing", {})
+        audio = s.get("audio", {})
+        ocr = s.get("ocr", {})
+        whisper = s.get("whisper", {})
+        pp = s.get("post_processing", {})
+        cleanup = s.get("text_cleanup", {})
+        delivery = s.get("delivery", {})
+        learning = s.get("learning", {})
+
+        confidence = whisper.get("confidence", 0)
+        if confidence > 0.85:
+            conf_class = "high"
+        elif confidence > 0.70:
+            conf_class = "medium"
+        else:
+            conf_class = "low"
+
+        # Text cleanup details
+        cleanup_parts = []
+        if cleanup.get("comma_spam_triggered"):
+            cleanup_parts.append("Comma spam cleaned")
+        if cleanup.get("spoken_punctuation_applied"):
+            cleanup_parts.append("Spoken punct applied")
+        if not cleanup_parts and cleanup.get("input", "") != cleanup.get("output", ""):
+            cleanup_parts.append("Text modified")
+        cleanup_str = ", ".join(cleanup_parts) if cleanup_parts else "No changes"
+
+        # Dictionary replacements
+        dict_repl = s.get("dictionary", {}).get("replacements_applied", {})
+        dict_str = ", ".join(f"{k}\u2192{v}" for k, v in dict_repl.items()) if dict_repl else ""
+
+        # Learning details
+        learning_vocab_list = learning.get("vocabulary_injected", [])
+        style = learning.get("style_metrics", {})
+        learning_detail_parts = []
+        if learning.get("enabled") and learning.get("app_key"):
+            sessions_count = learning.get("sessions_count", 0)
+            learn_conf = learning.get("confidence", 0)
+            learning_detail_parts.append(f'{sessions_count} sessions, {learn_conf:.0%} conf')
+            if style.get("sample_count", 0) >= 3:
+                learning_detail_parts.append(
+                    f'formality {style.get("formality_score", 0):.0%}'
+                )
+        learning_detail = "; ".join(learning_detail_parts)
+
+        return {
+            "timestamp": s.get("timestamp", "\u2014"),
+            "duration": f'{audio.get("duration_seconds", 0):.1f}s',
+            "duration_raw": audio.get("duration_seconds", 0),
+            "model": whisper.get("model", "\u2014"),
+            "app_type": ocr.get("app_type", "\u2014") if ocr.get("enabled") else "\u2014",
+            "window": ocr.get("window_title", "") if ocr.get("enabled") else "",
+            "names": ", ".join(ocr.get("proper_nouns", [])) if ocr.get("enabled") else "",
+            "whisper_raw": whisper.get("raw_output", "\u2014"),
+            "pp_output": pp.get("output", "\u2014") if pp.get("enabled") else "",
+            "pp_enabled": pp.get("enabled", False),
+            "cleanup_str": cleanup_str,
+            "dict_str": dict_str,
+            "final_text": s.get("final_text", "\u2014"),
+            "confidence": confidence,
+            "conf_class": conf_class,
+            "ocr_ms": timing.get("ocr_ms", ""),
+            "whisper_ms": timing.get("transcription_ms", ""),
+            "pp_ms": timing.get("post_processing_ms", ""),
+            "total_ms": timing.get("total_ms", ""),
+            "delivery": delivery.get("method", "\u2014"),
+            "chars": delivery.get("char_count", ""),
+            "learning_app": learning.get("app_key", "") if learning.get("enabled") else "",
+            "learning_vocab": len(learning_vocab_list),
+            "learning_detail": learning_detail,
+        }
+
+    def _write_csv(self, sessions, csv_path):
+        """Write session data to CSV for external analysis."""
+        fields = [
+            "timestamp", "duration", "model", "app_type", "window", "names",
+            "whisper_raw", "pp_output", "cleanup_str", "dict_str",
+            "final_text", "confidence",
+            "ocr_ms", "whisper_ms", "pp_ms", "total_ms",
+            "delivery", "chars",
+            "learning_app", "learning_vocab", "learning_detail",
+        ]
+        try:
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+                writer.writeheader()
+                for s in sessions:
+                    row = self._extract_row(s)
+                    writer.writerow(row)
+            self.logger.info(f"CSV exported: {csv_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to write CSV: {e}")
+
+    def _esc(self, text):
+        """HTML-escape a string."""
+        return html_mod.escape(str(text)) if text else ""
+
+    def _build_html(self, sessions, csv_filename):
         """Build an HTML comparison report from session data."""
         rows = []
         for s in sessions:
-            confidence = s.get("whisper", {}).get("confidence", 0)
-            if confidence > 0.85:
-                conf_class = "high"
-            elif confidence > 0.70:
-                conf_class = "medium"
-            else:
-                conf_class = "low"
+            r = self._extract_row(s)
 
-            app_type = s.get("ocr", {}).get("app_type", "\u2014")
-            whisper_raw = s.get("whisper", {}).get("raw_output", "\u2014")
-            pp_output = s.get("post_processing", {}).get("output", "\u2014")
-            if not s.get("post_processing", {}).get("enabled"):
-                pp_output = "<em>OFF</em>"
-            final = s.get("final_text", "\u2014")
-            ts = s.get("timestamp", "\u2014")
-            timing = s.get("timing", {})
-            total = timing.get("total_ms", "\u2014")
+            # Format timing breakdown
+            parts = []
+            if r["ocr_ms"]:
+                parts.append(f'OCR {r["ocr_ms"]}')
+            if r["whisper_ms"]:
+                parts.append(f'Whisper {r["whisper_ms"]}')
+            if r["pp_ms"]:
+                parts.append(f'PP {r["pp_ms"]}')
+            timing_detail = " / ".join(parts)
+
+            total = r["total_ms"]
+            if isinstance(total, (int, float)) and total >= 1000:
+                total_str = f'{total / 1000:.1f}s'
+            elif total:
+                total_str = f'{total}ms'
+            else:
+                total_str = "\u2014"
+
+            pp_cell = self._esc(r["pp_output"]) if r["pp_enabled"] else '<span class="off">OFF</span>'
+            dict_cell = self._esc(r["dict_str"]) if r["dict_str"] else '<span class="off">\u2014</span>'
+            learn_cell = self._esc(r["learning_app"]) or '<span class="off">\u2014</span>'
+            if r["learning_detail"]:
+                learn_cell += f'<br><span class="detail">{self._esc(r["learning_detail"])}</span>'
 
             rows.append(f"""<tr>
-                <td>{ts}</td>
-                <td>{app_type}</td>
-                <td>{whisper_raw}</td>
-                <td>{pp_output}</td>
-                <td>{final}</td>
-                <td class="{conf_class}">{confidence:.0%}</td>
-                <td>{total}ms</td>
+                <td class="ts">{self._esc(r["timestamp"])}</td>
+                <td>{self._esc(r["duration"])}</td>
+                <td>{self._esc(r["app_type"])}</td>
+                <td class="text">{self._esc(r["window"])}</td>
+                <td class="text">{self._esc(r["whisper_raw"])}</td>
+                <td class="text">{pp_cell}</td>
+                <td>{self._esc(r["cleanup_str"])}</td>
+                <td>{dict_cell}</td>
+                <td class="text final">{self._esc(r["final_text"])}</td>
+                <td class="{r["conf_class"]}">{r["confidence"]:.0%}</td>
+                <td>{self._esc(r["model"])}</td>
+                <td class="timing">{total_str}<br><span class="detail">{timing_detail}</span></td>
+                <td>{self._esc(r["delivery"])}</td>
+                <td>{self._esc(r["names"])}</td>
+                <td>{learn_cell}</td>
             </tr>""")
 
         rows_html = "\n".join(rows)
+        generated = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         return f"""<!DOCTYPE html>
 <html>
@@ -333,35 +473,70 @@ class DebugManager(QObject):
 <meta charset="utf-8">
 <title>Resonance Debug Report</title>
 <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: #1a1a2e; color: #e0e0e0; padding: 20px; }}
-    h1 {{ color: #3498db; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-    th {{ background: #2d2d4e; padding: 10px; text-align: left; font-size: 13px;
-         border-bottom: 2px solid #3498db; }}
-    td {{ padding: 8px 10px; border-bottom: 1px solid #2d2d4e; font-size: 12px;
-         vertical-align: top; max-width: 300px; word-wrap: break-word; }}
-    tr:hover {{ background: #2d2d4e; }}
-    .high {{ color: #2ecc71; font-weight: bold; }}
-    .medium {{ color: #f39c12; font-weight: bold; }}
-    .low {{ color: #e74c3c; font-weight: bold; }}
-    em {{ color: #666; }}
-    .count {{ color: #888; margin-bottom: 20px; }}
+    * {{ box-sizing: border-box; }}
+    body {{ font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+           background: #0f0f1e; color: #d0d0d0; margin: 0; padding: 32px; }}
+
+    .header {{ display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }}
+    h1 {{ color: #3498db; font-size: 28px; margin: 0; }}
+    .meta {{ color: #666; font-size: 13px; }}
+
+    .toolbar {{ display: flex; gap: 12px; align-items: center; margin-bottom: 24px; }}
+    .btn {{ background: #2d2d4e; color: #c0c0c0; border: 1px solid #3d3d5e;
+            padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;
+            text-decoration: none; }}
+    .btn:hover {{ background: #3d3d5e; color: #fff; }}
+
+    table {{ width: 100%; border-collapse: collapse; }}
+    thead {{ position: sticky; top: 0; z-index: 1; }}
+    th {{ background: #1a1a30; padding: 10px 8px; text-align: left; font-size: 11px;
+         font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+         color: #8888aa; border-bottom: 2px solid #2d2d4e; white-space: nowrap; }}
+    td {{ padding: 8px 8px; border-bottom: 1px solid #1a1a30; font-size: 12px;
+         vertical-align: top; line-height: 1.4; }}
+    tr:hover {{ background: #1a1a35; }}
+
+    .ts {{ white-space: nowrap; font-size: 11px; color: #888; }}
+    .text {{ max-width: 280px; word-wrap: break-word; }}
+    .final {{ color: #e8e8e8; font-weight: 500; }}
+    .timing {{ white-space: nowrap; }}
+    .detail {{ font-size: 10px; color: #666; }}
+
+    .high {{ color: #2ecc71; font-weight: 600; }}
+    .medium {{ color: #f39c12; font-weight: 600; }}
+    .low {{ color: #e74c3c; font-weight: 600; }}
+    .off {{ color: #555; font-style: italic; }}
 </style>
 </head>
 <body>
-<h1>Resonance Debug Report</h1>
-<p class="count">{len(sessions)} sessions</p>
+
+<div class="header">
+    <h1>Resonance Debug Report</h1>
+    <span class="meta">{len(sessions)} sessions &middot; Generated {generated}</span>
+</div>
+
+<div class="toolbar">
+    <a class="btn" href="{csv_filename}" download>Export CSV</a>
+</div>
+
 <table>
 <thead>
     <tr>
         <th>Timestamp</th>
+        <th>Duration</th>
         <th>App Type</th>
+        <th>App</th>
         <th>Whisper Raw</th>
         <th>Post-Processed</th>
+        <th>Text Cleanup</th>
+        <th>Dictionary</th>
         <th>Final Text</th>
-        <th>Confidence</th>
-        <th>Total Time</th>
+        <th>Conf.</th>
+        <th>Model</th>
+        <th>Timing</th>
+        <th>Delivery</th>
+        <th>OCR Names</th>
+        <th>Learning</th>
     </tr>
 </thead>
 <tbody>

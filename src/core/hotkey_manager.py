@@ -12,6 +12,11 @@ from utils.logger import get_logger
 class HotkeyManager:
     """Manages global hotkey listening with separate press/release callbacks."""
 
+    # Debounce window for release events (seconds).
+    # Filters spurious release→press cycles from keyboard ghosting,
+    # modifier flickering, or OS key interception.
+    _RELEASE_DEBOUNCE_S = 0.10
+
     def __init__(self):
         """Initialize hotkey manager."""
         self.listener = None
@@ -21,6 +26,7 @@ class HotkeyManager:
         self.on_release_callback = None
         self._lock = threading.Lock()
         self.current_keys = set()
+        self._release_timer = None
         self.logger = get_logger()
 
     def parse_hotkey_string(self, hotkey_string):
@@ -122,6 +128,13 @@ class HotkeyManager:
 
                     # Check if hotkey combo is now pressed
                     if not self.is_pressed and self.is_hotkey_pressed(self.hotkey_combo):
+                        # If a release is pending, this was a spurious release→press.
+                        # Cancel the release and restore pressed state silently.
+                        if self._release_timer is not None:
+                            self._release_timer.cancel()
+                            self._release_timer = None
+                            self.is_pressed = True
+                            return
                         self.is_pressed = True
                         if self.on_press_callback:
                             # Run callback in separate thread to avoid blocking
@@ -143,12 +156,16 @@ class HotkeyManager:
                     # Check if hotkey combo is now released
                     if self.is_pressed and not self.is_hotkey_pressed(self.hotkey_combo):
                         self.is_pressed = False
-                        if self.on_release_callback:
-                            # Run callback in separate thread
-                            threading.Thread(
-                                target=self.on_release_callback,
-                                daemon=True
-                            ).start()
+                        # Debounce: delay the release callback to filter
+                        # spurious release events (keyboard ghosting, etc.)
+                        if self._release_timer is not None:
+                            self._release_timer.cancel()
+                        self._release_timer = threading.Timer(
+                            self._RELEASE_DEBOUNCE_S,
+                            self._fire_release,
+                        )
+                        self._release_timer.daemon = True
+                        self._release_timer.start()
             except Exception as e:
                 self.logger.error(f"Error in on_key_release: {e}", exc_info=True)
 
@@ -161,8 +178,18 @@ class HotkeyManager:
 
         self.logger.info(f"Registered global hotkey: {hotkey_string}")
 
+    def _fire_release(self):
+        """Fire the release callback after debounce delay."""
+        with self._lock:
+            self._release_timer = None
+        if self.on_release_callback:
+            self.on_release_callback()
+
     def unregister_hotkey(self):
         """Stop listening for hotkeys."""
+        if self._release_timer is not None:
+            self._release_timer.cancel()
+            self._release_timer = None
         if self.listener:
             self.listener.stop()
             self.listener = None

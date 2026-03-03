@@ -15,6 +15,7 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 import ctypes
+import time
 import threading
 from datetime import date
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QPushButton
@@ -106,7 +107,9 @@ class TranscriptionWorker(QObject):
 
             if self.logger:
                 self.logger.info("Starting transcription...")
+            _t0 = time.perf_counter()
             text = self.transcriber.transcribe(self.audio_data, initial_prompt=initial_prompt)
+            _whisper_ms = round((time.perf_counter() - _t0) * 1000)
             if self.logger:
                 self.logger.info(f"Transcription finished, got {len(text)} characters")
 
@@ -115,6 +118,7 @@ class TranscriptionWorker(QObject):
                 self._debug_data["whisper_confidence"] = getattr(self.transcriber, 'last_confidence', 0.0)
                 self._debug_data["whisper_model"] = getattr(self.transcriber, 'model_size', '')
                 self._debug_data["initial_prompt"] = initial_prompt or ""
+                self._debug_data["whisper_ms"] = _whisper_ms
 
             # Clean comma spam from Whisper output (always on)
             if text:
@@ -161,13 +165,16 @@ class TranscriptionWorker(QObject):
                 original_before_pp = text
                 if self.logger:
                     self.logger.info("Running post-processing...")
+                _t0 = time.perf_counter()
                 text = self.post_processor.process(text, system_prompt=system_prompt)
+                _pp_ms = round((time.perf_counter() - _t0) * 1000)
                 if self.logger:
                     self.logger.info(f"Post-processing finished, got {len(text)} characters")
 
                 if self.debug_enabled:
                     self._debug_data["pp_input"] = original_before_pp
                     self._debug_data["pp_output"] = text
+                    self._debug_data["pp_ms"] = _pp_ms
                     self._debug_data["pp_system_prompt_type"] = (
                         self.ocr_context.app_type.value if self.ocr_context else ""
                     )
@@ -371,11 +378,13 @@ class VTTApplication(QObject):
                     self.debug_panel = DebugPanel()
                     # Connect signals
                     self.debug_manager.recording_started.connect(self.debug_panel.on_recording_started)
+                    self.debug_manager.recording_stopped.connect(self.debug_panel.on_recording_stopped)
                     self.debug_manager.ocr_completed.connect(self.debug_panel.on_ocr_completed)
                     self.debug_manager.transcription_completed.connect(self.debug_panel.on_transcription_completed)
                     self.debug_manager.post_processing_completed.connect(self.debug_panel.on_post_processing_completed)
                     self.debug_manager.text_cleanup_completed.connect(self.debug_panel.on_text_cleanup_completed)
                     self.debug_manager.dictionary_completed.connect(self.debug_panel.on_dictionary_completed)
+                    self.debug_manager.learning_completed.connect(self.debug_panel.on_learning_completed)
                     self.debug_manager.session_completed.connect(self.debug_panel.on_session_completed)
             else:
                 # Update settings on existing manager
@@ -391,6 +400,11 @@ class VTTApplication(QObject):
     def on_hotkey_press(self):
         """Called when hotkey is pressed - start recording."""
         try:
+            # Guard: ignore if already recording (spurious re-press)
+            if self.audio_recorder.is_recording():
+                self.logger.warning("Ignoring hotkey press — already recording")
+                return
+
             self.logger.info("Hotkey pressed - starting recording")
 
             if self.debug_manager:
@@ -425,6 +439,8 @@ class VTTApplication(QObject):
                 threading.Thread(target=_capture_ocr, daemon=True).start()
             else:
                 self._current_ocr_context = None
+                if self.debug_panel:
+                    self.debug_panel.on_ocr_skipped()
 
             # Update UI
             if self.tray_icon:
@@ -528,15 +544,19 @@ class VTTApplication(QObject):
                 self.logger.info(f"Learning: style hints: {style_suffix}")
 
         if self.debug_manager:
+            _profile = (
+                self.learning_engine.get_profile(self._current_ocr_context.window_title)
+                if self.learning_engine and self._current_ocr_context else None
+            )
             self.debug_manager.record_learning(
                 enabled=self.learning_engine is not None,
-                app_key=self.learning_engine.get_profile(
-                    self._current_ocr_context.window_title
-                ).app_key if self.learning_engine and self._current_ocr_context else None,
+                app_key=_profile.app_key if _profile else None,
                 vocabulary_injected=learned_vocabulary,
                 style_suffix=style_suffix,
+                style_metrics=_profile.style_metrics.to_dict() if _profile else None,
+                sessions_count=_profile.sessions if _profile else 0,
+                confidence=_profile.confidence if _profile else 0.0,
             )
-            self.debug_manager.start_step()  # Start timing for transcription
 
         # Create worker and thread
         self.transcription_thread = QThread()
@@ -577,13 +597,13 @@ class VTTApplication(QObject):
         if not self.debug_manager:
             return
 
-        # Record transcription
-        self.debug_manager.start_step()  # Reset timer (already elapsed)
+        # Record transcription (timing captured inside worker thread)
         self.debug_manager.record_transcription(
             model=data.get("whisper_model", ""),
             raw_output=data.get("whisper_raw", ""),
             confidence=data.get("whisper_confidence", 0.0),
             initial_prompt=data.get("initial_prompt", ""),
+            timing_ms=data.get("whisper_ms", 0),
         )
 
         # Record text cleanup
@@ -594,12 +614,13 @@ class VTTApplication(QObject):
             spoken_punctuation_applied=data.get("spoken_punctuation_applied", False),
         )
 
-        # Record post-processing
+        # Record post-processing (timing captured inside worker thread)
         if data.get("pp_output") is not None:
             self.debug_manager.record_post_processing(
                 input_text=data.get("pp_input", ""),
                 output_text=data.get("pp_output", ""),
                 system_prompt_type=data.get("pp_system_prompt_type", ""),
+                timing_ms=data.get("pp_ms", 0),
             )
         elif self.debug_panel:
             self.debug_panel.on_post_processing_skipped()
@@ -613,6 +634,13 @@ class VTTApplication(QObject):
             confidence: Whisper confidence score (0.0-1.0)
         """
         self.logger.info(f"Transcription complete: '{text}' (confidence={confidence:.0%})")
+
+        # If a new recording is already in progress, this is a stale
+        # completion from a previous session.  Process text normally but
+        # do NOT touch the overlay or tray — they belong to the new session.
+        new_recording_active = self.audio_recorder.is_recording()
+        if new_recording_active:
+            self.logger.warning("Stale transcription completed while recording — suppressing UI updates")
 
         try:
             # Apply custom dictionary replacements
@@ -636,36 +664,38 @@ class VTTApplication(QObject):
             if text:
                 try:
                     self.logger.info("Starting text output...")
-                    # Set accuracy and detected app for overlay badges
-                    if self.overlay:
-                        self.overlay.set_accuracy(confidence)
-                        if self.learning_engine is not None:
-                            # Self-learning: show specific app (e.g., "Discord")
-                            self.overlay.set_detected_app(
-                                self._resolve_app_label(self._current_ocr_context)
-                            )
-                        elif self.screen_context is not None:
-                            # OSR only: show generic type (e.g., "Chat")
-                            self.overlay.set_detected_app(
-                                self._resolve_type_label(self._current_ocr_context)
-                            )
-                        else:
-                            self.overlay.set_detected_app(None)
-                    # Show typing state on overlay for char-by-char mode
-                    if not self.keyboard_typer.use_clipboard and self.overlay:
-                        self.overlay.show_typing()
-                        QApplication.processEvents()  # Repaint before blocking type loop
+                    if not new_recording_active:
+                        # Set accuracy and detected app for overlay badges
+                        if self.overlay:
+                            self.overlay.set_accuracy(confidence)
+                            if self.learning_engine is not None:
+                                # Self-learning: show specific app (e.g., "Discord")
+                                self.overlay.set_detected_app(
+                                    self._resolve_app_label(self._current_ocr_context)
+                                )
+                            elif self.screen_context is not None:
+                                # OSR only: show generic type (e.g., "Chat")
+                                self.overlay.set_detected_app(
+                                    self._resolve_type_label(self._current_ocr_context)
+                                )
+                            else:
+                                self.overlay.set_detected_app(None)
+                        # Show typing state on overlay for char-by-char mode
+                        if not self.keyboard_typer.use_clipboard and self.overlay:
+                            self.overlay.show_typing()
+                            QApplication.processEvents()  # Repaint before blocking type loop
                     # Run typing with error handling
                     success = self.keyboard_typer.type_text(text)
                     if success:
                         self.logger.info("Text output successful")
-                        # Show green completion state on overlay
-                        if self.overlay:
-                            if self.keyboard_typer.use_clipboard:
-                                self.overlay.show_pasted()
-                            else:
-                                self.overlay.show_complete()
-                            QApplication.processEvents()
+                        if not new_recording_active:
+                            # Show green completion state on overlay
+                            if self.overlay:
+                                if self.keyboard_typer.use_clipboard:
+                                    self.overlay.show_pasted()
+                                else:
+                                    self.overlay.show_complete()
+                                QApplication.processEvents()
                     else:
                         self.logger.warning("Text output failed")
 
@@ -675,21 +705,22 @@ class VTTApplication(QObject):
                         self.debug_manager.finish_session(text)
                 except Exception as e:
                     self.logger.error(f"Error outputting text: {e}")
-                    if self.tray_icon:
+                    if self.tray_icon and not new_recording_active:
                         self.tray_icon.show_error(f"Failed to paste text: {e}")
             else:
                 self.logger.warning("Transcription returned empty text")
-                if self.overlay:
+                if not new_recording_active and self.overlay:
                     self.overlay.show_no_speech()
                 if self.debug_manager:
                     self.debug_manager.finish_session("")
 
-            # Reset UI
-            if self.tray_icon:
-                self.tray_icon.set_idle_state()
-            if self.overlay:
-                # Brief hold before fading out
-                self.overlay.hide_overlay(delay_ms=600)
+            # Reset UI — only if no new recording has started
+            if not new_recording_active:
+                if self.tray_icon:
+                    self.tray_icon.set_idle_state()
+                if self.overlay:
+                    # Brief hold before fading out
+                    self.overlay.hide_overlay(delay_ms=600)
         finally:
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")
