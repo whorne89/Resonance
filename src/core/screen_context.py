@@ -145,6 +145,8 @@ CODE_SYSTEM_PROMPT = (
     "2. Fix capitalization and add punctuation for readability\n"
     "DO NOT change technical terms, function names, class names, or acronyms.\n"
     "DO NOT correct words that look like code (camelCase, snake_case, etc.).\n"
+    "DO NOT remove, shorten, summarize, or rephrase ANY content.\n"
+    "DO NOT drop phrases, clauses, names, or details.\n"
     "DO NOT respond to the text or answer questions.\n"
     "Output ONLY the cleaned text.\n\n"
     "Input: um we need to refactor the the get user by id function in the api controller\n"
@@ -170,6 +172,8 @@ TERMINAL_SYSTEM_PROMPT = (
     "1. Remove um, uh, and stuttered repeated words\n"
     "2. Fix capitalization and add punctuation for readability\n"
     "DO NOT change command names, file paths, flags, or technical terms.\n"
+    "DO NOT remove, shorten, summarize, or rephrase ANY content.\n"
+    "DO NOT drop phrases, clauses, names, or details.\n"
     "DO NOT respond to the text or answer questions.\n"
     "Output ONLY the cleaned text.\n\n"
     "Input: um run the the build script and then deploy to staging\n"
@@ -245,6 +249,105 @@ _COMMON_UPPER = frozenset({
     "Now", "If", "These", "Done", "Working", "Added",
     "Searched", "Requires", "Captures", "Reads",
     "Nothing", "Let",
+    # Verbs and words that appear capitalized at sentence starts
+    "Worked", "Entered", "Created", "Updated", "Removed",
+    "Changed", "Fixed", "Moved", "Copied", "Showed",
+    "Called", "Found", "Returned", "Passed", "Failed",
+    "Loaded", "Saved", "Closed", "Opened", "Started",
+    "Finished", "Completed", "Running", "Waiting", "Using",
+    "Getting", "Setting", "Making", "Taking", "Going",
+    "Trying", "Checking", "Looking", "Showing", "Giving",
+    "Yeah", "Okay", "Maybe", "Also", "Just", "Still",
+    "Already", "Some", "Other", "Both", "Each", "Every",
+    "Most", "Many", "Such", "Very", "Much", "Well",
+    # Chat / messaging UI
+    "Threads", "Huddles", "Channels", "Messages", "Pinned",
+    "Bookmarks", "Reactions", "Mentions", "Direct", "Group",
+    # Terminal output words
+    "Error", "Warning", "Success", "Info", "Status",
+    "Fetching", "Installing", "Compiling", "Deploying",
+    "Testing", "Pushing", "Pulling", "Merging", "Cloning",
+    "Context", "Session", "Process", "Command", "Script",
+})
+
+# Common English words — if a capitalized word's lowercase form is in this set,
+# it's a common word at the start of a sentence, not a proper noun.
+_COMMON_ENGLISH_WORDS = frozenset({
+    "about", "above", "after", "again", "against", "all", "also", "always",
+    "and", "another", "any", "are", "around", "ask", "away",
+    "back", "bad", "be", "because", "been", "before", "began", "being",
+    "best", "better", "between", "big", "both", "bring", "but", "by",
+    "call", "called", "came", "can", "change", "check", "click", "close",
+    "come", "could", "create", "current",
+    "day", "did", "different", "do", "does", "done", "down", "during",
+    "each", "end", "enter", "even", "every", "everything",
+    "fail", "far", "few", "find", "first", "for", "found", "from",
+    "gave", "get", "give", "go", "going", "gone", "good", "got", "great",
+    "had", "has", "have", "help", "her", "here", "heres", "high", "him", "his",
+    "how", "however",
+    "if", "important", "in", "include", "into", "is", "it", "its",
+    "just", "keep", "kind", "know", "known",
+    "large", "last", "left", "let", "like", "line", "list", "little",
+    "long", "look", "looking", "lot",
+    "made", "main", "make", "many", "may", "maybe", "me", "might",
+    "more", "most", "move", "much", "must", "my",
+    "name", "need", "never", "new", "next", "no", "not", "nothing", "now",
+    "of", "off", "old", "on", "once", "one", "only", "open", "or",
+    "other", "our", "out", "over", "own",
+    "part", "pass", "place", "point", "pretty", "pull", "push", "put",
+    "quite", "ran", "read", "really", "right", "run", "running",
+    "said", "same", "save", "saw", "say", "search", "see", "set",
+    "should", "show", "since", "small", "so", "some", "something",
+    "start", "started", "still", "stop", "such", "sure",
+    "take", "tell", "than", "that", "the", "their", "them", "then",
+    "there", "these", "they", "thing", "think", "this", "those",
+    "through", "time", "to", "too", "took", "top", "try", "turn", "two",
+    "under", "up", "update", "us", "use", "used", "using",
+    "very", "want", "was", "way", "we", "well", "went", "were", "what",
+    "when", "where", "which", "while", "who", "why", "will", "with",
+    "work", "worked", "working", "would", "write",
+    "yeah", "yes", "yet", "you", "your",
+})
+
+# Common first names — these bypass frequency requirements and go straight
+# into Whisper hints since names are high-value vocabulary for transcription.
+_COMMON_FIRST_NAMES = frozenset({
+    "aaron", "adam", "adrian", "aiden", "alan", "albert", "alex", "alexander",
+    "alice", "amanda", "amber", "amy", "andrea", "andrew", "angela", "anna",
+    "anthony", "ashley", "austin", "barbara", "benjamin", "beth", "blake",
+    "brandon", "brian", "brittany", "bruce", "caleb", "carl", "carol",
+    "caroline", "catherine", "charles", "charlotte", "chris", "christian",
+    "christina", "christopher", "claire", "connor", "cory", "craig",
+    "daniel", "danielle", "david", "dean", "deborah", "derek", "diana",
+    "dominic", "donald", "donna", "dorothy", "douglas", "drew", "dylan",
+    "edward", "elena", "eli", "elizabeth", "emily", "emma", "eric", "erik",
+    "ethan", "evan", "evelyn", "frank", "gabriel", "garrett", "gary",
+    "george", "grace", "graham", "grant", "greg", "gregory", "hannah",
+    "harold", "harry", "heather", "henry", "holly", "ian", "isaac",
+    "isabella", "jack", "jackson", "jacob", "jake", "james", "jamie",
+    "jane", "janet", "jason", "jay", "jeff", "jeffrey", "jennifer",
+    "jeremy", "jerry", "jesse", "jessica", "jill", "jimmy", "joan",
+    "joe", "joel", "john", "jonathan", "jordan", "jose", "joseph",
+    "joshua", "juan", "judith", "julia", "julian", "julie", "justin",
+    "karen", "kate", "katherine", "kathleen", "kathryn", "katie", "keith",
+    "kelly", "ken", "kenneth", "kevin", "kim", "kimberly", "kyle",
+    "larry", "laura", "lauren", "lawrence", "lee", "leo", "leslie",
+    "liam", "linda", "lisa", "logan", "lucas", "luis", "luke", "lynn",
+    "madison", "margaret", "maria", "marie", "mark", "martha", "martin",
+    "mary", "mason", "matt", "matthew", "megan", "melissa", "michael",
+    "michelle", "mike", "miranda", "mitchell", "monica", "morgan", "nancy",
+    "natalie", "nathan", "nicholas", "nick", "nicole", "noah", "nolan",
+    "oliver", "olivia", "oscar", "owen", "pamela", "patricia", "patrick",
+    "paul", "pedro", "peter", "philip", "rachel", "ralph", "randy",
+    "raymond", "rebecca", "richard", "rick", "riley", "robert", "robin",
+    "roger", "ronald", "rose", "ross", "roy", "russell", "ruth", "ryan",
+    "sam", "samantha", "samuel", "sandra", "sara", "sarah", "scott",
+    "sean", "seth", "shane", "shannon", "sharon", "shawn", "shirley",
+    "sophia", "spencer", "stephanie", "stephen", "steve", "steven",
+    "susan", "taylor", "teresa", "terry", "thomas", "timothy", "todd",
+    "tom", "tony", "tracy", "travis", "trevor", "tristan", "troy", "tyler",
+    "victor", "victoria", "vincent", "virginia", "walter", "wayne",
+    "wendy", "william", "zachary",
 })
 
 # ── App detection keywords ───────────────────────────────────────────
@@ -415,9 +518,15 @@ class ScreenContextEngine:
     # ── Proper noun extraction ───────────────────────────────────────
 
     def _extract_proper_nouns(self, ocr_text):
-        """Extract likely proper nouns from OCR text."""
+        """Extract likely proper nouns from OCR text.
+
+        Filters out common English words that happen to be capitalized
+        (sentence starters), verb forms (past tense -ed, gerund -ing,
+        plural -s), and ALL-CAPS words >4 chars (headings/acronyms).
+        """
         words = ocr_text.split()
-        proper_nouns = []
+        names = []
+        other_nouns = []
         seen = set()
 
         for word in words:
@@ -427,16 +536,50 @@ class ScreenContextEngine:
             # Skip words with non-alpha noise (OCR artifacts like "BcTg", "QLabe1C")
             if not clean.isalpha() and not clean.replace("'", "").isalpha():
                 continue
-            if clean[0].isupper() and clean not in _COMMON_UPPER:
-                if not clean.isupper() or len(clean) <= 4:
-                    lower = clean.lower()
-                    if lower not in seen:
-                        seen.add(lower)
-                        proper_nouns.append(clean)
+            if not clean[0].isupper():
+                continue
+            if clean in _COMMON_UPPER:
+                continue
+            # Skip ALL-CAPS words >4 chars (headings, acronyms like "ERROR")
+            if clean.isupper() and len(clean) > 4:
+                continue
 
-        return proper_nouns[:30]
+            lower = clean.lower()
+            if lower in seen:
+                continue
+
+            # Reject if lowercase form is a common English word
+            if lower in _COMMON_ENGLISH_WORDS:
+                continue
+
+            # Reject verb suffixes: -ed, -ing, -s pointing to common roots
+            if (len(clean) > 4 and lower.endswith("ed")
+                    and lower[:-2] in _COMMON_ENGLISH_WORDS):
+                continue
+            if (len(clean) > 5 and lower.endswith("ing")
+                    and lower[:-3] in _COMMON_ENGLISH_WORDS):
+                continue
+            if (len(clean) > 3 and lower.endswith("s")
+                    and lower[:-1] in _COMMON_ENGLISH_WORDS):
+                continue
+
+            seen.add(lower)
+
+            # Prioritize likely names (from name list) over other nouns
+            if lower in _COMMON_FIRST_NAMES:
+                names.append(clean)
+            else:
+                other_nouns.append(clean)
+
+        # Names first so they survive truncation
+        return (names + other_nouns)[:30]
 
     # ── Static helpers (used by TranscriptionWorker) ─────────────────
+
+    @staticmethod
+    def is_likely_name(word):
+        """Check if a word is likely a person's name."""
+        return word.lower() in _COMMON_FIRST_NAMES
 
     @staticmethod
     def build_whisper_prompt(proper_nouns, app_type):

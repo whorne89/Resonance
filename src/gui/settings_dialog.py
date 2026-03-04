@@ -500,7 +500,7 @@ class PostProcessingDownloadDialog(RoundedDialog):
 class _SettingsUpdateCheckWorker(QObject):
     """Background worker for checking updates from settings dialog."""
 
-    update_available = Signal(str, str, str)  # version, download_url, tag_name
+    update_available = Signal(str, str, str, str)  # version, download_url, tag_name, release_body
     up_to_date = Signal()
     error = Signal(str)
 
@@ -510,7 +510,7 @@ class _SettingsUpdateCheckWorker(QObject):
             checker = UpdateChecker()
             info = checker.check_for_update()
             if info:
-                self.update_available.emit(info.version_str, info.download_url, info.tag_name)
+                self.update_available.emit(info.version_str, info.download_url, info.tag_name, info.release_body)
             else:
                 self.up_to_date.emit()
         except Exception as e:
@@ -1031,6 +1031,7 @@ class SettingsDialog(RoundedDialog):
         # Stash for download info
         self._pending_update_version = None
         self._pending_update_url = None
+        self._pending_release_body = ""
 
         group.setLayout(layout)
         return group
@@ -1059,7 +1060,7 @@ class SettingsDialog(RoundedDialog):
 
         thread.start()
 
-    def _on_update_check_found(self, version_str, download_url, tag_name):
+    def _on_update_check_found(self, version_str, download_url, tag_name, release_body):
         """Handle update found — runs on main thread via AutoConnection."""
         if self._update_check_thread:
             self._update_check_thread.quit()
@@ -1068,6 +1069,7 @@ class SettingsDialog(RoundedDialog):
         self._update_status.setStyleSheet("color: #2ecc71; font-size: 11px; font-weight: bold;")
         self._pending_update_version = version_str
         self._pending_update_url = download_url
+        self._pending_release_body = release_body
 
         from utils.resource_path import is_bundled
         if is_bundled():
@@ -1098,6 +1100,13 @@ class SettingsDialog(RoundedDialog):
 
         version_str = self._pending_update_version
         download_url = self._pending_update_url
+
+        # Show changelog dialog before downloading
+        from gui.changelog_dialog import ChangelogDialog
+        changelog = ChangelogDialog(version_str, self._pending_release_body, parent=self)
+        changelog.exec()
+        if not changelog.was_accepted():
+            return
 
         # Create and run progress dialog (handles thread internally)
         dlg = _UpdateDownloadDialog(self, version_str, download_url)

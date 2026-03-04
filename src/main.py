@@ -215,7 +215,7 @@ class ModelLoadWorker(QObject):
 class _UpdateCheckWorker(QObject):
     """Worker for checking GitHub Releases in a background thread."""
 
-    update_available = Signal(str, str, str)  # version, download_url, message
+    update_available = Signal(str, str, str, str)  # version, download_url, tag_name, release_body
     up_to_date = Signal()
 
     def run(self):
@@ -223,7 +223,7 @@ class _UpdateCheckWorker(QObject):
         checker = UpdateChecker()
         info = checker.check_for_update()
         if info:
-            self.update_available.emit(info.version_str, info.download_url, info.tag_name)
+            self.update_available.emit(info.version_str, info.download_url, info.tag_name, info.release_body)
         else:
             self.up_to_date.emit()
 
@@ -273,7 +273,7 @@ class VTTApplication(QObject):
     # these signals instead: worker signal → relay signal → callback.
     _relay_model_loaded = Signal()
     _relay_model_error = Signal(str)
-    _relay_update = Signal(str, str, str)     # version, url, tag
+    _relay_update = Signal(str, str, str, str)  # version, url, tag, release_body
     _relay_up_to_date = Signal()
     _relay_dl_progress = Signal(int, int)     # downloaded, total
     _relay_dl_finished = Signal(str)          # path
@@ -537,7 +537,8 @@ class VTTApplication(QObject):
         if self.learning_engine and self._current_ocr_context:
             title = self._current_ocr_context.window_title
             learned_vocabulary = self.learning_engine.get_vocabulary(title)
-            style_suffix = self.learning_engine.build_style_prompt_suffix(title)
+            app_type_str = self._current_ocr_context.app_type.value if self._current_ocr_context else None
+            style_suffix = self.learning_engine.build_style_prompt_suffix(title, app_type=app_type_str)
             if learned_vocabulary:
                 self.logger.info(f"Learning: {len(learned_vocabulary)} vocab terms for '{title[:30]}'")
             if style_suffix:
@@ -1065,7 +1066,7 @@ def main():
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
-        def _on_update_available(version_str, download_url, tag_name):
+        def _on_update_available(version_str, download_url, tag_name, release_body):
             try:
                 vtt_app.logger.info(f"Update callback: {version_str}, showing toast")
                 thread.quit()
@@ -1076,7 +1077,12 @@ def main():
                 def _on_accepted():
                     toast.hide()
                     if is_bundled():
-                        _download_and_apply(version_str, download_url, vtt_app)
+                        from gui.changelog_dialog import ChangelogDialog
+                        changelog = ChangelogDialog(version_str, release_body)
+                        vtt_app._changelog_dialog = changelog
+                        changelog.exec()
+                        if changelog.was_accepted():
+                            _download_and_apply(version_str, download_url, vtt_app)
                     else:
                         from core.updater import UpdateChecker, UpdateInfo
                         info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)

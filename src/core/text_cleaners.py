@@ -126,7 +126,7 @@ def replace_spoken_punctuation(text):
     # Collapse spaces around symbols so "/ resume" → "/resume",
     # "user @ gmail" → "user@gmail", "( x )" → "(x)", etc.
     # Prefix symbols: remove trailing space when followed by a word char
-    text = re.sub(r'([/\\@#$~.\-]) (?=\w)', r'\1', text)
+    text = re.sub(r'([/\\@#$~\-]) (?=\w)', r'\1', text)
     # Attach to previous word: opening brackets and @
     text = re.sub(r'(?<=\w) (?=[(\[{@])', '', text)
     text = re.sub(r'([(\[{]) (?=\S)', r'\1', text)
@@ -134,5 +134,8 @@ def replace_spoken_punctuation(text):
     text = re.sub(r'(?<=\S) ([)\]};:!?.])', r'\1', text)
     # Collapse runs of symbols with spaces between them (e.g., "/ /" → "//")
     text = re.sub(r'([/\\:~.]) (?=[/\\:~.])', r'\1', text)
+    # Collapse dot-space only for filenames (followed by lowercase), not sentences
+    # "main. py" → "main.py" but "sentence. The" stays intact
+    text = re.sub(r'(\w)\. (?=[a-z])', r'\1.', text)
 
     return text

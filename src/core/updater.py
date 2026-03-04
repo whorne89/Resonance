@@ -28,6 +28,7 @@ class UpdateInfo:
     version_str: str
     tag_name: str
     download_url: str
+    release_body: str = ""
 
 
 class UpdateChecker:
@@ -78,11 +79,14 @@ class UpdateChecker:
                 self.logger.warning("Update found but no .zip asset in release")
                 return None
 
+            release_body = data.get("body", "") or ""
+
             self.logger.info(f"Update available: {version_str} (current: {self.current_version})")
             return UpdateInfo(
                 version_str=version_str,
                 tag_name=tag,
                 download_url=download_url,
+                release_body=release_body,
             )
 
         except (URLError, json.JSONDecodeError, ValueError) as e:

@@ -38,7 +38,7 @@ class UpdateToast(QWidget):
     ACCENT_COLOR = QColor(52, 152, 219)
 
     # Timing
-    AUTO_DISMISS_MS = 10000
+    AUTO_DISMISS_MS = 25000
     FADE_IN_MS = 200
     FADE_OUT_MS = 300
 

@@ -298,13 +298,25 @@ class PostProcessor:
             )
             return text
 
+        # Guard: if the model deleted >40% of content, it over-compressed
+        if len(text) > 30 and len(cleaned) < len(text) * 0.6:
+            self.logger.warning(
+                f"Post-processing content deletion ({100 - int(len(cleaned)/len(text)*100)}% removed): "
+                f"'{cleaned[:80]}', returning original"
+            )
+            return text
+
         # Guard: detect answer patterns — model tried to respond instead of clean
         answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",
                          "i will", "i'll", "i would", "of course", "absolutely",
                          "understood", "okay, let", "okay, i", "great,",
                          "you're welcome", "you are welcome", "thank you!",
                          "certainly", "i understand", "i'm sorry", "i apologize",
-                         "i use ", "i don't have", "as an ai")
+                         "i use ", "i don't have", "as an ai",
+                         "open your", "type this", "go to ", "navigate to",
+                         "let me ", "first,", "to do this", "you can ",
+                         "you should ", "you need to", "try ", "please ",
+                         "step 1", "1.", "1)")
         if cleaned.lower().startswith(answer_starts) and not text.lower().startswith(answer_starts):
             self.logger.warning(
                 f"Post-processing hallucination (answer): '{cleaned[:80]}', "

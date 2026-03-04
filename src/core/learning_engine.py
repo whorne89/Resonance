@@ -119,6 +119,7 @@ class AppProfile:
     last_used: str = ""
     vocabulary: list = field(default_factory=list)
     vocabulary_frequency: dict = field(default_factory=dict)
+    vocabulary_sessions: dict = field(default_factory=dict)  # per-word session count
     style_metrics: StyleMetrics = field(default_factory=StyleMetrics)
 
     def to_dict(self):
@@ -140,6 +141,7 @@ class AppProfile:
             last_used=data.get("last_used", ""),
             vocabulary=list(data.get("vocabulary", [])),
             vocabulary_frequency=dict(data.get("vocabulary_frequency", {})),
+            vocabulary_sessions=dict(data.get("vocabulary_sessions", {})),
             style_metrics=style,
         )
 
@@ -225,16 +227,55 @@ class LearningEngine:
         """
         Get learned vocabulary terms for Whisper initial_prompt hints.
 
+        Uses three-band filtering based on frequency and ubiquity:
+        - Names (from _COMMON_FIRST_NAMES): always included, bypass frequency
+        - Noise (frequency < 3): excluded — not enough data
+        - Static UI (appears in 80%+ of sessions): excluded — UI chrome
+        - Contextual (everything else with frequency >= 3): included
+
         Returns terms sorted by frequency (highest-frequency LAST for
         Whisper attention bias toward end tokens). Capped at 15 terms.
         """
+        from core.screen_context import _COMMON_FIRST_NAMES
+
         profile = self.get_profile(window_title)
         if not profile or not profile.vocabulary:
             return []
-        # Sort ascending by frequency so highest-frequency terms are last
+
         freq = profile.vocabulary_frequency
-        terms = sorted(profile.vocabulary, key=lambda t: freq.get(t.lower(), 0))
-        return terms[-15:]  # Cap at 15 terms
+        sessions_map = profile.vocabulary_sessions
+        total_sessions = max(profile.sessions, 1)
+
+        names = []
+        contextual = []
+
+        for term in profile.vocabulary:
+            key = term.lower()
+            word_freq = freq.get(key, 0)
+            word_sessions = sessions_map.get(key, 0)
+            ubiquity = word_sessions / total_sessions if total_sessions > 0 else 0
+
+            # Names always get included
+            if key in _COMMON_FIRST_NAMES:
+                names.append(term)
+                continue
+
+            # Noise band: not enough data
+            if word_freq < 3:
+                continue
+
+            # Static UI band: appears in 80%+ of sessions (and enough sessions)
+            if total_sessions >= 3 and ubiquity >= 0.8:
+                continue
+
+            # Contextual band: promoted to hints
+            contextual.append(term)
+
+        # Sort contextual by frequency ascending (highest last for Whisper bias)
+        contextual.sort(key=lambda t: freq.get(t.lower(), 0))
+
+        # Names first, then contextual — cap at 15
+        return (names + contextual)[-15:]
 
     def get_style_hints(self, window_title):
         """Get style metrics dict if enough samples exist."""
@@ -254,20 +295,29 @@ class LearningEngine:
             return profile.app_type
         return None
 
-    def build_style_prompt_suffix(self, window_title):
+    def build_style_prompt_suffix(self, window_title, app_type=None):
         """
         Build a dynamic prompt suffix based on learned style.
 
-        Returns a string like "Use casual style with minimal punctuation."
+        Returns a string like "Use casual, conversational style."
         or None if not enough data.
+
+        Args:
+            window_title: Current window title string.
+            app_type: App type string (e.g. "terminal", "code"). Style hints
+                are skipped for terminal/code — OCR style metrics from command
+                output don't reflect the user's desired dictation style.
         """
+        # Terminal/code OCR text reflects command output, not user style
+        if app_type in ("terminal", "code"):
+            return None
+
         hints = self.get_style_hints(window_title)
         if not hints:
             return None
 
         parts = []
         formality = hints.get("formality_score", 0.5)
-        punct = hints.get("punctuation_ratio", 0.5)
         cap = hints.get("capitalization_ratio", 0.5)
 
         # Formality
@@ -275,12 +325,6 @@ class LearningEngine:
             parts.append("Use casual, conversational style.")
         elif formality > 0.7:
             parts.append("Use formal, professional style.")
-
-        # Punctuation
-        if punct < 0.3:
-            parts.append("Minimal punctuation.")
-        elif punct > 0.7:
-            parts.append("Use proper punctuation.")
 
         # Capitalization
         if cap < 0.3:
@@ -422,10 +466,17 @@ class LearningEngine:
                 if clean[0].isupper() and not clean.isupper():
                     candidates.add(clean)
 
+        # Track which words appeared in THIS session (for ubiquity calc)
+        session_seen = set()
+
         # Update frequency map
         for term in candidates:
             key = term.lower()
             profile.vocabulary_frequency[key] = profile.vocabulary_frequency.get(key, 0) + 1
+            # Track session presence (once per session per word)
+            if key not in session_seen:
+                session_seen.add(key)
+                profile.vocabulary_sessions[key] = profile.vocabulary_sessions.get(key, 0) + 1
             # Add to vocabulary list if not present (case-preserved)
             if not any(v.lower() == key for v in profile.vocabulary):
                 profile.vocabulary.append(term)
@@ -436,9 +487,11 @@ class LearningEngine:
             profile.vocabulary.sort(key=lambda t: freq.get(t.lower(), 0), reverse=True)
             removed = profile.vocabulary[MAX_VOCABULARY_PER_APP:]
             profile.vocabulary = profile.vocabulary[:MAX_VOCABULARY_PER_APP]
-            # Clean up frequency map
+            # Clean up frequency and session maps
             for term in removed:
-                profile.vocabulary_frequency.pop(term.lower(), None)
+                key = term.lower()
+                profile.vocabulary_frequency.pop(key, None)
+                profile.vocabulary_sessions.pop(key, None)
 
     # ------------------------------------------------------------------
     # Style metrics
