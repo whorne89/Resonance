@@ -25,6 +25,10 @@ A local voice-to-text dictation application using OpenAI Whisper with AI post-pr
 - **Windows 10/11 or Linux** (Debian-based distributions supported)
 - Python 3.12 (managed via uv)
 - Microphone
+- **Tesseract OCR** (optional, for On-Screen Recognition feature)
+  - Windows: Download from [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki)
+  - Linux: `sudo apt-get install tesseract-ocr`
+  - macOS: `brew install tesseract`
 
 ## Installation
 
@@ -71,12 +75,13 @@ Right-click the system tray icon and select **Settings** to configure:
 
 - **Python 3.12** (pinned via `.python-version`, managed by uv)
 - **PySide6**: GUI framework (system tray, settings, overlays, toast notifications)
+- **QtMultimedia**: Cross-platform audio playback for notification tones
 - **sounddevice**: Audio recording
-- **simpleaudio**: Cross-platform audio playback for notification tones
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
-- **paddleocr**: Cross-platform OCR for screen context capture
+- **pytesseract**: Python wrapper for Tesseract OCR
+- **Tesseract OCR**: Google's open-source OCR engine for screen context capture
 - **pywinctl**: Cross-platform window management (active window detection)
 - **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation

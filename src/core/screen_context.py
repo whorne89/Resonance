@@ -6,10 +6,14 @@ detects the app type, and extracts proper nouns for Whisper hints.
 
 from dataclasses import dataclass, field
 from enum import Enum
+import os
+import sys
 
-from paddleocr import PaddleOCR
+import pytesseract
+from PIL import Image
 
 from utils.logger import get_logger
+from utils.resource_path import is_bundled
 
 
 class AppType(Enum):
@@ -472,21 +476,34 @@ class ScreenContextEngine:
 
     def __init__(self):
         self.logger = get_logger()
-        # Initialize PaddleOCR once at startup (thread-safe, downloads models on first run)
+        self.ocr_available = False
+        
+        # Configure Tesseract path for bundled app
+        if is_bundled():
+            # In PyInstaller bundle, tesseract is in _internal/tesseract/
+            bundled_tesseract = os.path.join(sys._MEIPASS, 'tesseract', 'tesseract.exe')
+            if os.path.exists(bundled_tesseract):
+                pytesseract.pytesseract.tesseract_cmd = bundled_tesseract
+                self.logger.info(f"Using bundled Tesseract: {bundled_tesseract}")
+            else:
+                self.logger.warning("Bundled Tesseract not found - OCR disabled")
+                return
+        # else: use system-installed Tesseract (found in PATH)
+        
+        # Verify Tesseract is available
         try:
-            self.logger.info("Initializing PaddleOCR (first run downloads ~100MB models)...")
-            # Disable GPU and OneDNN to avoid conflicts with CTranslate2
-            self.ocr = PaddleOCR(
-                use_angle_cls=True, 
-                lang='en',
-                use_gpu=False,
-                enable_mkldnn=False,  # Disable OneDNN/MKL-DNN (conflicts with CTranslate2)
-                show_log=False  # Suppress verbose paddle logs
-            )
-            self.logger.info("PaddleOCR initialized successfully")
+            version = pytesseract.get_tesseract_version()
+            self.logger.info(f"Tesseract OCR initialized (version {version})")
+            self.ocr_available = True
         except Exception as e:
-            self.logger.error(f"Failed to initialize PaddleOCR: {e}")
-            self.ocr = None
+            self.logger.error(f"Failed to initialize Tesseract OCR: {e}")
+            if not is_bundled():
+                self.logger.error(
+                    "Tesseract not found. Install it:\n"
+                    "  Windows: https://github.com/UB-Mannheim/tesseract/wiki\n"
+                    "  Linux: sudo apt-get install tesseract-ocr\n"
+                    "  macOS: brew install tesseract"
+                )
 
     def capture(self):
         """Run the full OCR pipeline. Returns ScreenContext or None on failure."""
@@ -573,35 +590,24 @@ class ScreenContextEngine:
     # ── OCR ──────────────────────────────────────────────────────────
 
     def _extract_text(self, img):
-        """Run OCR on screenshot using PaddleOCR.
+        """Run OCR on screenshot using Tesseract.
         
         Args:
             img: PIL Image object
         """
         try:
-            import numpy as np
-            
-            if self.ocr is None:
-                self.logger.warning("OCR engine not initialized")
+            if not self.ocr_available:
+                self.logger.warning("OCR engine not available")
                 return ""
             
-            # Convert PIL Image to numpy array (PaddleOCR requires numpy or str path)
-            img_array = np.array(img)
+            # Run Tesseract OCR on the PIL Image
+            # Use config to optimize for screen text: PSM 3 = automatic page segmentation
+            text = pytesseract.image_to_string(img, lang='eng', config='--psm 3')
             
-            # Run OCR without cls parameter (not supported in newer versions)
-            result = self.ocr.ocr(img_array)
-
-            # Extract text from results: each line is [bbox, [text, confidence]]
-            # Group by y-coordinate to reconstruct lines
-            text_lines = []
-            if result and result[0]:
-                for line_data in result[0]:
-                    if line_data and len(line_data) >= 2:
-                        text = line_data[1][0]  # Extract text
-                        if text.strip():
-                            text_lines.append(text)
+            # Clean up the text
+            text = text.strip()
             
-            return "\n".join(text_lines)
+            return text
         except Exception as e:
             self.logger.warning(f"OCR: text extraction failed: {e}")
             return ""

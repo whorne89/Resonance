@@ -30,14 +30,35 @@ ct_datas, ct_binaries, ct_hiddenimports = collect_all('ctranslate2')
 # Copy package metadata so importlib.metadata.version('resonance') works
 meta_datas = copy_metadata('resonance')
 
+# Bundle Tesseract OCR (if available in project root)
+tesseract_datas = []
+tesseract_binaries = []
+if os.path.isdir('tesseract'):
+    # Bundle tesseract.exe
+    tesseract_exe = os.path.join('tesseract', 'tesseract.exe')
+    if os.path.isfile(tesseract_exe):
+        tesseract_binaries.append((tesseract_exe, 'tesseract'))
+    
+    # Bundle tessdata language files
+    tessdata_dir = os.path.join('tesseract', 'tessdata')
+    if os.path.isdir(tessdata_dir):
+        for file in os.listdir(tessdata_dir):
+            file_path = os.path.join(tessdata_dir, file)
+            if os.path.isfile(file_path):
+                tesseract_datas.append((file_path, 'tesseract/tessdata'))
+    
+    print(f"Bundling Tesseract: {len(tesseract_binaries)} binaries, {len(tesseract_datas)} data files")
+else:
+    print("Warning: 'tesseract/' directory not found - OCR will require system installation")
+
 a = Analysis(
     ['src/main.py'],
     pathex=['src'],
-    binaries=ssl_binaries + fw_binaries + ct_binaries,
+    binaries=ssl_binaries + fw_binaries + ct_binaries + tesseract_binaries,
     datas=[
         ('src/resources/icons/', 'resources/icons/'),
         ('src/resources/sounds/', 'resources/sounds/'),
-    ] + fw_datas + ct_datas + meta_datas,
+    ] + fw_datas + ct_datas + meta_datas + tesseract_datas,
     hiddenimports=[
         'sounddevice',
         'pynput.keyboard._win32',

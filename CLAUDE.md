@@ -8,9 +8,9 @@ Resonance is a cross-platform voice-to-text desktop application that uses Whispe
 
 - **Python 3.12** — pinned via `.python-version`; uv manages the venv
 - **GUI**: PySide6 (Qt for Python)
-- **Audio**: sounddevice (recording), simpleaudio (notification tones)
+- **Audio**: sounddevice (recording), QtMultimedia/QSoundEffect (notification tones)
 - **Transcription**: faster-whisper (CTranslate2 backend, CPU only)
-- **OCR**: paddleocr (cross-platform OCR with pure Python), mss (screenshot capture), pywinctl (window management)
+- **OCR**: pytesseract (Tesseract OCR wrapper), mss (screenshot capture), pywinctl (window management)
 - **Hotkeys**: pynput
 - **Typing output**: pynput keyboard + pyperclip
 - **Threading**: QThread for async transcription
@@ -30,7 +30,7 @@ src/
     post_processor.py        - LLM post-processing via llama-server (grammar/punctuation/filler cleanup)
     screen_context.py        - OCR screen capture, app-type detection, name extraction
     learning_engine.py       - Self-learning per-app profiles (vocabulary, style metrics)
-    sound_effects.py         - Notification tones via simpleaudio (WAV files)
+    sound_effects.py         - Notification tones via QtMultimedia (WAV files)
     updater.py               - Auto-updater: GitHub Releases check, download, batch-script self-update
   gui/
     system_tray.py           - System tray icon with context menu
@@ -53,7 +53,7 @@ resonance.spec               - PyInstaller build spec (--onedir)
 - **App data stored relative to application directory** (not user home). Data lives in `<app_root>/.resonance/` so models, logs, and config stay on the same drive as the app.
 - **Custom dictionary** for post-transcription word replacement. Stored in config under `dictionary.replacements`. Case-insensitive matching, applied via `DictionaryProcessor.apply()`.
 - **Recording overlay** — frameless QPainter pill widget, always-on-top, click-through (`WindowTransparentForInput`). Shows pulsing red dot + live waveform bars during recording, animated blue dots during processing.
-- **Sound effects** — generated as WAV files in `.resonance/sounds/`, played via `simpleaudio` (cross-platform, non-blocking). Users can drop custom `start.wav`/`stop.wav` to override defaults. Using simpleaudio avoids conflicts with sounddevice recording.
+- **Sound effects** — generated as WAV files in `.resonance/sounds/`, played via Qt's `QtMultimedia` (`QSoundEffect`) for reliable cross-platform playback. Users can drop custom `start.wav`/`stop.wav` to override defaults. QSoundEffect is non-blocking and works reliably across Windows, Linux, and macOS.
 - **Thread-safe hotkey handling** — hotkey callbacks emit Qt signals (`_hotkey_pressed`/`_hotkey_released`) to marshal execution from pynput background threads to the main Qt thread.
 - **CPU only, GPU scrapped** — see GPU section below.
 
@@ -132,9 +132,16 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 
 ## Screen Context (OCR)
 
-- **Backend**: paddleocr (cross-platform OCR via PaddleOCR), mss (screenshot capture), pywinctl (window detection)
+- **Backend**: pytesseract (Tesseract OCR wrapper - Google's open-source OCR engine), mss (screenshot capture), pywinctl (window detection)
 - **Scope**: Captures active window text on hotkey press to (1) extract proper nouns for Whisper vocabulary hints via `initial_prompt`, (2) detect app type (CHAT, EMAIL, CODE, DOCUMENT, GENERAL) for format-specific post-processing prompts
 - **Architecture**: `ScreenContextEngine` in `core/screen_context.py`. Runs in background thread during recording (~56ms total). Returns `ScreenContext` dataclass with raw_text, app_type, proper_nouns, window_title
+- **Installation**:
+  - **Windows EXE**: Tesseract is bundled automatically (no user installation needed)
+  - **Development/Source**: Must install Tesseract manually
+    - Windows: https://github.com/UB-Mannheim/tesseract/wiki
+    - Linux: `sudo apt-get install tesseract-ocr`
+    - macOS: `brew install tesseract`
+- **Bundling**: PyInstaller spec automatically includes `tesseract/` directory if present at build time (tesseract.exe + tessdata files)
 - **App detection**: Heuristic keyword matching on window title + OCR text (e.g. "Discord" → CHAT, "Outlook" → EMAIL, "Visual Studio" → CODE, "cmd.exe" → TERMINAL)
 - **App types**: CHAT, EMAIL, CODE, TERMINAL, DOCUMENT, GENERAL — each has a dedicated system prompt
 - **Prompts**: Five app-type-specific system prompts (CHAT, EMAIL, CODE, TERMINAL, DOCUMENT) as module-level constants in screen_context.py
@@ -196,7 +203,7 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 ## Future: macOS Support
 
 - **Goal**: Single Python codebase that runs on both Windows and Mac
-- **Platform-specific code is ~2%** — most of the app (Qt GUI, faster-whisper, sounddevice, simpleaudio, config, post-processing) is already cross-platform
+- **Platform-specific code is ~2%** — most of the app (Qt GUI, faster-whisper, sounddevice, QtMultimedia, config, post-processing) is already cross-platform
 - **What needs abstraction**:
   - `ctypes.windll` (app ID) → already in try/except, just skip on Mac
   - `pynput` hotkeys/typing → works on Mac but requires Accessibility permissions; need a first-run permission prompt
