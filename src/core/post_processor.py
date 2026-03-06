@@ -6,7 +6,10 @@ punctuation, capitalization, and remove filler words.
 
 import json
 import os
+import platform
+import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -61,11 +64,33 @@ GGUF_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
 GGUF_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
 GGUF_HF_URL = f"https://huggingface.co/{GGUF_REPO}/resolve/main/{GGUF_FILENAME}"
 
-LLAMA_CPP_RELEASE_TAG = "b8175"
-LLAMA_CPP_ZIP = f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-win-cpu-x64.zip"
+LLAMA_CPP_RELEASE_TAG = "b8216"
+
+# Platform-specific binary names and download URLs
+def _get_platform_info():
+    """Returns (os_name, binary_name, archive_name) for current platform."""
+    system = platform.system()
+    if system == "Windows":
+        archive_name = f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-win-cpu-x64.zip"
+        return ("windows", "llama-server.exe", archive_name, "zip")
+    elif system == "Darwin":  # macOS
+        # Detect ARM64 vs x64
+        import platform as plat
+        machine = plat.machine()
+        if machine == "arm64":
+            archive_name = f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-macos-arm64.tar.gz"
+        else:
+            archive_name = f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-macos-x64.tar.gz"
+        return ("macos", "llama-server", archive_name, "tar.gz")
+    elif system == "Linux":
+        return ("linux", "llama-server", f"llama-{LLAMA_CPP_RELEASE_TAG}-bin-ubuntu-x64.tar.gz", "tar.gz")
+    else:
+        raise RuntimeError(f"Unsupported platform: {system}")
+
+_PLATFORM_OS, _LLAMA_SERVER_BINARY, LLAMA_CPP_ARCHIVE, ARCHIVE_TYPE = _get_platform_info()
 LLAMA_CPP_URL = (
     f"https://github.com/ggml-org/llama.cpp/releases/download/"
-    f"{LLAMA_CPP_RELEASE_TAG}/{LLAMA_CPP_ZIP}"
+    f"{LLAMA_CPP_RELEASE_TAG}/{LLAMA_CPP_ARCHIVE}"
 )
 
 
@@ -163,7 +188,9 @@ class PostProcessor:
             progress_callback: Optional callback(bytes_downloaded, total_bytes)
         """
         import zipfile
+        import tarfile
         import io
+        import stat
 
         bin_dir = self._get_bin_dir()
         gguf_dir = self._get_gguf_dir()
@@ -172,24 +199,66 @@ class PostProcessor:
         os.makedirs(bin_dir, exist_ok=True)
         os.makedirs(gguf_dir, exist_ok=True)
 
-        # Download llama-server binary zip
+        # Download llama-server binary archive
         exe_path = self._get_llama_server_exe()
         if not os.path.isfile(exe_path):
             self.logger.info(f"Downloading llama-server from {LLAMA_CPP_URL}")
             req = urllib.request.Request(LLAMA_CPP_URL)
             with urllib.request.urlopen(req) as resp:
-                zip_data = resp.read()
+                archive_data = resp.read()
 
-            with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
-                for member in zf.namelist():
-                    basename = os.path.basename(member)
-                    if not basename:
-                        continue
-                    if basename == "llama-server.exe" or basename.endswith(".dll"):
-                        target = os.path.join(bin_dir, basename)
-                        with zf.open(member) as src, open(target, "wb") as dst:
-                            dst.write(src.read())
-                        self.logger.info(f"Extracted: {target}")
+            # Extract based on archive type
+            if ARCHIVE_TYPE == "zip":
+                with zipfile.ZipFile(io.BytesIO(archive_data)) as archive_file:
+                    for member in archive_file.namelist():
+                        basename = os.path.basename(member)
+                        if not basename:
+                            continue
+                        
+                        # Extract binary and platform-specific dependencies
+                        should_extract = (
+                            basename == _LLAMA_SERVER_BINARY or
+                            (sys.platform == "win32" and basename.endswith(".dll")) or
+                            (sys.platform != "win32" and basename.endswith(".so")) or
+                            (sys.platform == "darwin" and basename.endswith(".dylib"))
+                        )
+                        
+                        if should_extract:
+                            target = os.path.join(bin_dir, basename)
+                            with archive_file.open(member) as src, open(target, "wb") as dst:
+                                dst.write(src.read())
+                            
+                            # Make binary executable on Unix-like systems
+                            if sys.platform != "win32" and basename == _LLAMA_SERVER_BINARY:
+                                st = os.stat(target)
+                                os.chmod(target, st.st_mode | stat.S_IEXEC | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                            
+                            self.logger.info(f"Extracted: {target}")
+            
+            elif ARCHIVE_TYPE == "tar.gz":
+                with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as archive_file:
+                    for member in archive_file.getmembers():
+                        basename = os.path.basename(member.name)
+                        if not basename:
+                            continue
+                        
+                        # Extract binary and platform-specific dependencies
+                        should_extract = (
+                            basename == _LLAMA_SERVER_BINARY or
+                            basename.endswith(".so") or
+                            basename.endswith(".dylib")
+                        )
+                        
+                        if should_extract:
+                            target = os.path.join(bin_dir, basename)
+                            with archive_file.extractfile(member) as src, open(target, "wb") as dst:
+                                dst.write(src.read())
+                            
+                            # Make binary executable
+                            st = os.stat(target)
+                            os.chmod(target, st.st_mode | stat.S_IEXEC | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                            
+                            self.logger.info(f"Extracted: {target}")
 
         # Download GGUF model
         model_path = self._get_gguf_model_path()
@@ -213,7 +282,7 @@ class PostProcessor:
         return get_app_data_path("bin")
 
     def _get_llama_server_exe(self):
-        return os.path.join(self._get_bin_dir(), "llama-server.exe")
+        return os.path.join(self._get_bin_dir(), _LLAMA_SERVER_BINARY)
 
     def _get_gguf_model_path(self):
         return os.path.join(self._get_gguf_dir(), GGUF_FILENAME)
@@ -223,7 +292,7 @@ class PostProcessor:
         model_path = self._get_gguf_model_path()
 
         if not os.path.isfile(exe_path):
-            raise FileNotFoundError(f"llama-server.exe not found at: {exe_path}")
+            raise FileNotFoundError(f"llama-server binary not found at: {exe_path}")
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"GGUF model not found at: {model_path}")
 
@@ -237,23 +306,78 @@ class PostProcessor:
             "--threads", "4",
         ]
 
-        self._server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=(
-                subprocess.CREATE_NO_WINDOW
-                if hasattr(subprocess, "CREATE_NO_WINDOW")
-                else 0
-            ),
-        )
+        runtime_env = self._build_runtime_env()
+
+        # Platform-specific subprocess configuration
+        popen_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "cwd": self._get_bin_dir(),
+            "env": runtime_env,
+        }
+        
+        if sys.platform == "win32":
+            # Windows: hide window
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            # Unix-like systems: use preexec_fn to create new process group
+            # (reliably detaches from parent)
+            popen_kwargs["preexec_fn"] = os.setpgrp if hasattr(os, "setpgrp") else None
+
+        self._server_process = subprocess.Popen(cmd, **popen_kwargs)
 
         self._wait_for_health(timeout=30)
         self.logger.info("llama-server is ready")
 
+    def _build_runtime_env(self):
+        """Build a process environment that can resolve local llama shared libs."""
+        env = os.environ.copy()
+        bin_dir = self._get_bin_dir()
+
+        if sys.platform.startswith("linux"):
+            self._ensure_linux_so_symlinks(bin_dir)
+            existing = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = (
+                f"{bin_dir}:{existing}" if existing else bin_dir
+            )
+
+        return env
+
+    def _ensure_linux_so_symlinks(self, bin_dir):
+        """Create missing lib*.so.0 entries when archives only include lib*.so files."""
+        if not os.path.isdir(bin_dir):
+            return
+
+        for name in os.listdir(bin_dir):
+            if not (name.startswith("lib") and name.endswith(".so")):
+                continue
+
+            source = os.path.join(bin_dir, name)
+            target = f"{source}.0"
+            if os.path.exists(target):
+                continue
+
+            try:
+                os.symlink(name, target)
+                self.logger.info(f"Created shared lib symlink: {target} -> {name}")
+            except (OSError, NotImplementedError):
+                # Fallback for environments where symlinks are unavailable.
+                shutil.copy2(source, target)
+                self.logger.info(f"Copied shared lib fallback: {target}")
+
     def _wait_for_health(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
+            if self._server_process is not None and self._server_process.poll() is not None:
+                stdout, stderr = self._server_process.communicate()
+                out_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+                err_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+                raise RuntimeError(
+                    "llama-server exited before becoming healthy "
+                    f"(code={self._server_process.returncode}). "
+                    f"stderr: {err_text[-500:] or '<empty>'}; stdout: {out_text[-500:] or '<empty>'}"
+                )
+
             try:
                 req = urllib.request.Request(LLAMA_HEALTH_URL)
                 with urllib.request.urlopen(req, timeout=2) as resp:
@@ -262,6 +386,18 @@ class PostProcessor:
             except (urllib.error.URLError, OSError):
                 pass
             time.sleep(0.5)
+
+        if self._server_process is not None:
+            try:
+                stdout, stderr = self._server_process.communicate(timeout=0.2)
+            except Exception:
+                stdout, stderr = (b"", b"")
+            out_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+            err_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+            raise TimeoutError(
+                f"llama-server did not become healthy within {timeout}s; "
+                f"stderr: {err_text[-500:] or '<empty>'}; stdout: {out_text[-500:] or '<empty>'}"
+            )
         raise TimeoutError(f"llama-server did not become healthy within {timeout}s")
 
     def _stop_llama_server(self):
@@ -270,11 +406,15 @@ class PostProcessor:
             try:
                 self._server_process.terminate()
                 self._server_process.wait(timeout=5)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                self.logger.warning("llama-server did not terminate gracefully, killing")
                 try:
                     self._server_process.kill()
-                except Exception:
-                    pass
+                    self._server_process.wait(timeout=2)
+                except Exception as e:
+                    self.logger.warning(f"Error killing llama-server: {e}")
+            except Exception as e:
+                self.logger.warning(f"Error stopping llama-server: {e}")
             self._server_process = None
 
     def _process_via_api(self, text, system_prompt=None):

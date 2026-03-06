@@ -122,13 +122,18 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 ## Post-Processing
 
 - **Backend**: llama-server (llama.cpp) with Qwen 2.5 1.5B Instruct GGUF (q4_k_m, ~1.1 GB)
+- **Cross-platform**: Binary downloaded automatically for Windows, macOS (ARM64/x64), or Linux (x64) on first use
+  - **Windows**: `llama-b8216-bin-win-cpu-x64.zip` - CPU-only, x64 architecture
+  - **Linux**: `llama-b8216-bin-ubuntu-x64.tar.gz` - CPU-only, x64 architecture
+  - **macOS ARM64**: `llama-b8216-bin-macos-arm64.tar.gz` - Apple Silicon (M1/M2/M3)
+  - **macOS x64**: `llama-b8216-bin-macos-x64.tar.gz` - Intel Macs
 - **Scope**: Grammar, capitalization, punctuation (periods, commas, question marks, quotation marks), contractions, sentence breaks, filler word removal (um, uh), and stutter/repeat cleanup
 - **Prompt philosophy**: Conservative — keep every word the speaker said, only fix formatting. Do NOT summarize, shorten, or rephrase. Three explicit rules: (1) remove um/uh/stutters, (2) fix capitalization + punctuation, (3) fix grammar.
 - **Hallucination guards**: Five-layer system in `_process_via_api()`: (1) filler-only input returns empty, (2) length guard rejects output >1.5x input, (3) answer-pattern guard, (4) question-answer guard, (5) comma-spam guard (rejects output with >words/3 commas)
 - **Lifecycle**: Tied to settings checkbox — created when ON, `.shutdown()` kills llama-server when OFF
 - **Lazy loading**: Server subprocess starts on first `.process()` call, not at toggle-on
 - **Pipeline**: Whisper → PostProcessor.process() → DictionaryProcessor.apply() → KeyboardTyper
-- **Files**: llama-server.exe in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
+- **Files**: llama-server binary in `.resonance/bin/`, GGUF model in `.resonance/models/postproc-gguf/`
 
 ## Screen Context (OCR)
 
@@ -203,8 +208,9 @@ Custom sounds at `<app_root>/.resonance/sounds/start.wav` and `stop.wav`
 ## Future: macOS Support
 
 - **Goal**: Single Python codebase that runs on both Windows and Mac
+- **Status**: Post-processing is now cross-platform (Windows/Linux/macOS). Other features mostly work but need testing.
 - **Platform-specific code is ~2%** — most of the app (Qt GUI, faster-whisper, sounddevice, QtMultimedia, config, post-processing) is already cross-platform
-- **What needs abstraction**:
+- **What still needs abstraction**:
   - `ctypes.windll` (app ID) → already in try/except, just skip on Mac
   - `pynput` hotkeys/typing → works on Mac but requires Accessibility permissions; need a first-run permission prompt
   - Window capture for OCR → may need platform-specific implementations

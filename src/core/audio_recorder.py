@@ -194,21 +194,25 @@ class AudioRecorder:
         return self.recording
 
     def _resample(self, audio, from_rate, to_rate):
-        """Resample audio from one sample rate to another using scipy."""
-        try:
-            from scipy import signal
-            # Calculate new length
-            num_samples = int(len(audio) * to_rate / from_rate)
-            # Use scipy.signal.resample for high-quality resampling
-            resampled = signal.resample(audio, num_samples)
-            return resampled.astype(np.float32)
-        except ImportError:
-            # Fallback: simple linear interpolation if scipy not available
-            self.logger.warning("scipy not available, using basic resampling")
-            ratio = to_rate / from_rate
-            new_length = int(len(audio) * ratio)
-            indices = np.linspace(0, len(audio) - 1, new_length)
-            return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
+        """Resample audio from one sample rate to another using numpy interpolation.
+        
+        Uses linear interpolation which is efficient and good for audio resampling.
+        Whisper expects 16kHz, but some devices may provide different sample rates.
+        """
+        if from_rate == to_rate:
+            return audio
+        
+        # Calculate new length
+        ratio = to_rate / from_rate
+        new_length = int(len(audio) * ratio)
+        
+        # Linear interpolation: map old indices to new indices
+        old_indices = np.arange(len(audio))
+        new_indices = np.linspace(0, len(audio) - 1, new_length)
+        
+        # Interpolate
+        resampled = np.interp(new_indices, old_indices, audio)
+        return resampled.astype(np.float32)
 
     def get_default_device(self):
         """
