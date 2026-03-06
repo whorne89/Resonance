@@ -1,6 +1,6 @@
 # Resonance
 
-A local voice-to-text dictation application for Windows using OpenAI Whisper with AI post-processing from Qwen 2.5. Type with your voice in any application - browsers, chat windows, code editors, and more.
+A local voice-to-text dictation application using OpenAI Whisper with AI post-processing from Qwen 2.5. Type with your voice in any application - browsers, chat windows, code editors, and more.
 
 ## Features
 
@@ -18,12 +18,17 @@ A local voice-to-text dictation application for Windows using OpenAI Whisper wit
 - **Simple interface**: Dark-themed system tray application with toast notifications
 - **Configurable**: Customize hotkey, model size, audio device, and typing method
 - **Automatic model download**: Downloads the speech model on first launch with progress animation
+- **Cross-platform**: Works on Windows, Linux, and macOS
 
 ## Requirements
 
-- **Windows 10 or 11**
+- **Windows 10/11, Linux, or macOS**
 - Python 3.12 (managed via uv)
 - Microphone
+- **Tesseract OCR** (Linux/macOS only, optional — for On-Screen Recognition)
+  - Linux: `sudo apt-get install tesseract-ocr`
+  - macOS: `brew install tesseract`
+  - Windows: Not needed (uses built-in Windows OCR)
 
 ## Installation
 
@@ -70,11 +75,13 @@ Right-click the system tray icon and select **Settings** to configure:
 
 - **Python 3.12** (pinned via `.python-version`, managed by uv)
 - **PySide6**: GUI framework (system tray, settings, overlays, toast notifications)
+- **QtMultimedia**: Cross-platform audio playback for notification tones
 - **sounddevice**: Audio recording
 - **faster-whisper**: Speech recognition (CTranslate2 backend, CPU-optimized)
 - **llama.cpp** (llama-server): Local inference server for post-processing
 - **Qwen 2.5 1.5B Instruct** (GGUF Q4_K_M): Language model for transcription cleanup
-- **winocr**: Windows native OCR for screen context capture
+- **winocr** (Windows) / **pytesseract** (Linux/macOS): OCR for screen context capture
+- **pywinctl**: Cross-platform window management (Linux/macOS active window detection)
 - **mss**: Screenshot capture for OCR
 - **pynput**: Global hotkeys and keyboard simulation
 - **pyperclip**: Clipboard-based text entry

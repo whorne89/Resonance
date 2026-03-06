@@ -15,6 +15,7 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 import time
+import traceback
 import threading
 from datetime import date
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QPushButton
@@ -958,6 +959,16 @@ def main():
     # Create application controller
     vtt_app = VTTApplication()
 
+    # Global exception hook — catches uncaught exceptions from any thread
+    def handle_exception(exctype, value, tb):
+        error_msg = f"{exctype.__name__}: {value}\n{''.join(traceback.format_tb(tb))}"
+        try:
+            vtt_app.logger.error(f"Uncaught exception: {error_msg}")
+        except Exception:
+            print(f"ERROR: {error_msg}", file=sys.stderr)
+
+    sys.excepthook = handle_exception
+
     # Create recording overlay
     overlay = RecordingOverlay()
     overlay.set_audio_recorder(vtt_app.audio_recorder)
@@ -1195,7 +1206,15 @@ def main():
     QTimer.singleShot(8000, _start_update_check)
 
     # Run application
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    except Exception as e:
+        try:
+            vtt_app.logger.error(f"Uncaught exception in app.exec(): {e}")
+            vtt_app.logger.error(traceback.format_exc())
+        except Exception:
+            pass
+        sys.exit(1)
 
 
 if __name__ == "__main__":

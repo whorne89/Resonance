@@ -48,6 +48,9 @@ Thumbs.db
 .cache/
 src/models/
 
+# Tesseract OCR (downloaded for bundling)
+tesseract/
+
 # User settings
 src/resources/settings.json
 .resonance/
