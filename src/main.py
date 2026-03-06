@@ -14,7 +14,6 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
-import ctypes
 import time
 import threading
 from datetime import date
@@ -43,12 +42,14 @@ from utils.logger import setup_logger
 
 def set_windows_app_id():
     """Set Windows AppUserModelID for proper taskbar/tray display."""
+    if sys.platform != 'win32':
+        return
     try:
-        # This tells Windows to display "Resonance" instead of the exe name
+        import ctypes
         app_id = "Resonance.VoiceToText.1.0"
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
-        pass  # Not on Windows or API not available
+        pass  # API not available
 
 
 class TranscriptionWorker(QObject):

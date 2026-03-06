@@ -1,8 +1,7 @@
 """
 Sound effects for Resonance.
-Generates short tones as WAV files and plays via Windows native audio API.
-Uses SND_FILENAME | SND_ASYNC for reliable non-blocking playback that
-doesn't conflict with sounddevice recording.
+Generates short tones as WAV files and plays via Qt's QtMultimedia.
+Uses QSoundEffect for reliable cross-platform non-blocking playback.
 
 Custom sounds: Drop your own start.wav / stop.wav into .resonance/sounds/
 to override the generated defaults.
@@ -11,7 +10,8 @@ to override the generated defaults.
 import os
 import struct
 import numpy as np
-import winsound
+from PySide6.QtMultimedia import QSoundEffect
+from PySide6.QtCore import QUrl
 
 from utils.logger import get_logger
 from utils.resource_path import get_app_data_path, get_resource_path
@@ -33,6 +33,15 @@ class SoundEffects:
 
         self._start_path = self._resolve_sound(sounds_dir, bundled_dir, 'start.wav')
         self._stop_path = self._resolve_sound(sounds_dir, bundled_dir, 'stop.wav')
+
+        # Initialize QSoundEffect instances for playback
+        self._start_effect = QSoundEffect()
+        self._start_effect.setSource(QUrl.fromLocalFile(self._start_path))
+        self._start_effect.setVolume(1.0)
+
+        self._stop_effect = QSoundEffect()
+        self._stop_effect.setSource(QUrl.fromLocalFile(self._stop_path))
+        self._stop_effect.setVolume(1.0)
 
     def _resolve_sound(self, user_dir, bundled_dir, filename):
         """Find sound file: user override > bundled > generate default.
@@ -138,19 +147,19 @@ class SoundEffects:
     def play_start_tone(self):
         """Play chime (recording started). Non-blocking."""
         try:
-            winsound.PlaySound(
-                self._start_path,
-                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT
-            )
+            if self._start_effect.isLoaded():
+                self._start_effect.play()
+            else:
+                self.logger.warning("Start tone not loaded")
         except Exception as e:
             self.logger.warning(f"Sound playback failed: {e}")
 
     def play_stop_tone(self):
         """Play chime (recording stopped). Non-blocking."""
         try:
-            winsound.PlaySound(
-                self._stop_path,
-                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT
-            )
+            if self._stop_effect.isLoaded():
+                self._stop_effect.play()
+            else:
+                self.logger.warning("Stop tone not loaded")
         except Exception as e:
             self.logger.warning(f"Sound playback failed: {e}")

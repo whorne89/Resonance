@@ -22,7 +22,8 @@ class AudioRecorder:
             sample_rate: Sample rate in Hz (16000 is Whisper's native rate)
             channels: Number of audio channels (1 for mono, 2 for stereo)
         """
-        self.sample_rate = sample_rate
+        self.target_sample_rate = sample_rate  # What Whisper expects
+        self.actual_sample_rate = sample_rate  # What the device provides
         self.channels = channels
         self.audio_queue = queue.Queue()
         self.recording = False
@@ -30,6 +31,11 @@ class AudioRecorder:
         self.device = None  # None = use default device
         self.logger = get_logger()
         self.current_rms = 0.0
+
+    @property
+    def sample_rate(self):
+        """Backward compatibility — external code reads this for Whisper's expected rate."""
+        return self.target_sample_rate
 
     def set_device(self, device_index):
         """
@@ -44,9 +50,9 @@ class AudioRecorder:
         """
         Get list of available audio input devices.
 
-        Filters to Windows WASAPI devices only (avoids showing the same
+        On Windows, filters to WASAPI devices (avoids showing the same
         physical device 3-4 times via MME, DirectSound, WDM-KS).
-        Falls back to all input devices if WASAPI isn't available.
+        On Linux/macOS, WASAPI is absent so all input devices are shown.
 
         Returns:
             List of (index, name) tuples for input devices
@@ -104,18 +110,40 @@ class AudioRecorder:
                 self.audio_queue.put(indata.copy())
                 self.current_rms = float(np.sqrt(np.mean(indata ** 2)))
 
-        try:
-            self.stream = sd.InputStream(
-                device=self.device,
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                callback=callback,
-                dtype='float32'
-            )
-            self.stream.start()
-        except Exception as e:
-            self.recording = False
-            raise Exception(f"Failed to start audio recording: {e}")
+        # Try sample rates in order: target (16kHz), then common fallbacks
+        # Some Linux audio devices don't support 16kHz natively
+        sample_rates = [self.target_sample_rate, 48000, 44100, 32000, 22050]
+        last_error = None
+
+        for rate in sample_rates:
+            try:
+                self.stream = sd.InputStream(
+                    device=self.device,
+                    samplerate=rate,
+                    channels=self.channels,
+                    callback=callback,
+                    dtype='float32'
+                )
+                self.stream.start()
+                self.actual_sample_rate = rate
+                if rate != self.target_sample_rate:
+                    self.logger.info(
+                        f"Audio: using {rate}Hz (device doesn't support "
+                        f"{self.target_sample_rate}Hz)"
+                    )
+                return
+            except Exception as e:
+                last_error = e
+                if self.stream:
+                    try:
+                        self.stream.close()
+                    except Exception:
+                        pass
+                    self.stream = None
+                continue
+
+        self.recording = False
+        raise Exception(f"Failed to start audio recording: {last_error}")
 
     def stop_recording(self):
         """
@@ -154,6 +182,12 @@ class AudioRecorder:
             if audio_data.ndim > 1:
                 audio_data = audio_data.flatten()
 
+            # Resample to target rate if device used a different rate
+            if self.actual_sample_rate != self.target_sample_rate:
+                audio_data = self._resample(
+                    audio_data, self.actual_sample_rate, self.target_sample_rate
+                )
+
             return audio_data
 
         return None
@@ -161,6 +195,20 @@ class AudioRecorder:
     def is_recording(self):
         """Check if currently recording."""
         return self.recording
+
+    def _resample(self, audio, from_rate, to_rate):
+        """Resample audio using numpy linear interpolation.
+
+        Whisper expects 16kHz but some devices only support higher rates.
+        Linear interpolation is efficient and sufficient for speech audio.
+        """
+        if from_rate == to_rate:
+            return audio
+        ratio = to_rate / from_rate
+        new_length = int(len(audio) * ratio)
+        old_indices = np.arange(len(audio))
+        new_indices = np.linspace(0, len(audio) - 1, new_length)
+        return np.interp(new_indices, old_indices, audio).astype(np.float32)
 
     def get_default_device(self):
         """

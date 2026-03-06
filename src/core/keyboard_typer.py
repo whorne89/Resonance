@@ -3,8 +3,10 @@ Keyboard typing simulation module using pynput.
 Types text into the currently focused window.
 """
 
-from pynput.keyboard import Controller, Key
+import sys
 import time
+
+from pynput.keyboard import Controller, Key
 import pyperclip
 
 from utils.logger import get_logger
@@ -96,8 +98,9 @@ class KeyboardTyper:
             # Small delay
             time.sleep(0.1)
 
-            # Paste using Ctrl+V
-            with self.controller.pressed(Key.ctrl):
+            # Paste using Ctrl+V (Cmd+V on macOS)
+            paste_mod = Key.cmd if sys.platform == "darwin" else Key.ctrl
+            with self.controller.pressed(paste_mod):
                 self.controller.press('v')
                 self.controller.release('v')
 

@@ -1,13 +1,19 @@
 """
 Screen context module for OCR-based awareness.
-Captures the active window, extracts text via Windows native OCR,
+Captures the active window, extracts text via platform-native OCR,
 detects the app type, and extracts proper nouns for Whisper hints.
+
+Windows: winocr (native OCR) + ctypes (window detection)
+Linux/macOS: pytesseract (Tesseract OCR) + pywinctl (window detection)
 """
 
-import ctypes
-import ctypes.wintypes
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
+
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
 
 from utils.logger import get_logger
 
@@ -472,9 +478,27 @@ class ScreenContextEngine:
 
     def __init__(self):
         self.logger = get_logger()
+        self._is_windows = sys.platform == "win32"
+        self.ocr_available = True
+
+        if not self._is_windows:
+            # Verify Tesseract is installed on Linux/macOS
+            try:
+                import pytesseract
+                version = pytesseract.get_tesseract_version()
+                self.logger.info(f"Tesseract OCR initialized (version {version})")
+            except Exception as e:
+                self.ocr_available = False
+                self.logger.error(
+                    f"Tesseract OCR not available: {e}. "
+                    "Install it: Linux: sudo apt-get install tesseract-ocr / "
+                    "macOS: brew install tesseract"
+                )
 
     def capture(self):
         """Run the full OCR pipeline. Returns ScreenContext or None on failure."""
+        if not self.ocr_available:
+            return None
         try:
             title, rect = self._get_foreground_window()
             if not rect or rect[2] <= 0 or rect[3] <= 0:
@@ -510,6 +534,13 @@ class ScreenContextEngine:
 
     def _get_foreground_window(self):
         """Get the foreground window title and bounding rect."""
+        if self._is_windows:
+            return self._get_foreground_window_win32()
+        else:
+            return self._get_foreground_window_pywinctl()
+
+    def _get_foreground_window_win32(self):
+        """Windows: get foreground window via ctypes."""
         user32 = ctypes.windll.user32
 
         hwnd = user32.GetForegroundWindow()
@@ -529,10 +560,26 @@ class ScreenContextEngine:
 
         return title, (x, y, w, h)
 
+    def _get_foreground_window_pywinctl(self):
+        """Linux/macOS: get foreground window via pywinctl."""
+        try:
+            import pywinctl
+            active_window = pywinctl.getActiveWindow()
+            if not active_window:
+                return "", (0, 0, 0, 0)
+            title = active_window.title
+            bbox = active_window.box
+            return title, (bbox.left, bbox.top, bbox.width, bbox.height)
+        except Exception as e:
+            self.logger.warning(f"OCR: failed to get active window: {e}")
+            return "", (0, 0, 0, 0)
+
     def _capture_window(self, rect):
         """Capture a screenshot of the given window region.
 
-        Returns a tuple (rgba_bytes, width, height) for winocr, or None on failure.
+        Windows: returns (rgba_bytes, width, height) for winocr.
+        Linux/macOS: returns PIL Image for pytesseract.
+        Returns None on failure.
         """
         try:
             import mss
@@ -541,10 +588,18 @@ class ScreenContextEngine:
             monitor = {"left": x, "top": y, "width": w, "height": h}
             with mss.mss() as sct:
                 screenshot = sct.grab(monitor)
-                # mss gives BGRA; winocr needs RGBA — swap B and R channels via numpy
-                arr = np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(-1, 4).copy()
-                arr[:, [0, 2]] = arr[:, [2, 0]]
-                return (arr.tobytes(), screenshot.width, screenshot.height)
+
+                if self._is_windows:
+                    # winocr needs RGBA — swap B and R channels
+                    arr = np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(-1, 4).copy()
+                    arr[:, [0, 2]] = arr[:, [2, 0]]
+                    return (arr.tobytes(), screenshot.width, screenshot.height)
+                else:
+                    # pytesseract needs PIL Image — convert BGRA to RGB
+                    from PIL import Image
+                    img_array = np.array(screenshot)
+                    img_rgb = img_array[:, :, [2, 1, 0]]
+                    return Image.fromarray(img_rgb)
         except Exception as e:
             self.logger.warning(f"OCR: screenshot failed: {e}")
             return None
@@ -552,14 +607,20 @@ class ScreenContextEngine:
     # ── OCR ──────────────────────────────────────────────────────────
 
     def _extract_text(self, capture_data):
-        """Run Windows native OCR on raw RGBA bytes."""
+        """Run OCR on captured screen data."""
+        if self._is_windows:
+            return self._extract_text_winocr(capture_data)
+        else:
+            return self._extract_text_tesseract(capture_data)
+
+    def _extract_text_winocr(self, capture_data):
+        """Windows: run native OCR via winocr."""
         try:
             import asyncio
             import winocr
 
             rgba_bytes, width, height = capture_data
 
-            # winocr is async — run in a new event loop
             loop = asyncio.new_event_loop()
             try:
                 result = loop.run_until_complete(
@@ -568,8 +629,18 @@ class ScreenContextEngine:
             finally:
                 loop.close()
 
-            # Extract text from result (WinRT OcrResult uses attributes, not dicts)
             return "\n".join(line.text for line in result.lines)
+        except Exception as e:
+            self.logger.warning(f"OCR: text extraction failed: {e}")
+            return ""
+
+    def _extract_text_tesseract(self, img):
+        """Linux/macOS: run OCR via Tesseract."""
+        try:
+            if not self.ocr_available:
+                return ""
+            import pytesseract
+            return pytesseract.image_to_string(img, lang='eng', config='--psm 3').strip()
         except Exception as e:
             self.logger.warning(f"OCR: text extraction failed: {e}")
             return ""
