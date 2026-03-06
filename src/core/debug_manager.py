@@ -120,7 +120,8 @@ class DebugManager(QObject):
             return 0
         return round((time.perf_counter() - self._step_start_time) * 1000)
 
-    def record_ocr(self, app_type, window_title, proper_nouns, raw_text_length):
+    def record_ocr(self, app_type, window_title, proper_nouns, raw_text_length,
+                    names=None, vocabulary=None):
         """Record OCR results."""
         if not self._current_session:
             return
@@ -130,6 +131,8 @@ class DebugManager(QObject):
             "app_type": app_type,
             "window_title": window_title,
             "proper_nouns": proper_nouns,
+            "names": names or [],
+            "vocabulary": vocabulary or [],
             "raw_text_length": raw_text_length,
         }
         self._current_session["ocr"] = ocr_data
@@ -371,7 +374,8 @@ class DebugManager(QObject):
             "model": whisper.get("model", "\u2014"),
             "app_type": ocr.get("app_type", "\u2014") if ocr.get("enabled") else "\u2014",
             "window": ocr.get("window_title", "") if ocr.get("enabled") else "",
-            "names": ", ".join(ocr.get("proper_nouns", [])) if ocr.get("enabled") else "",
+            "names": ", ".join(ocr.get("names", [])) if ocr.get("enabled") else "",
+            "words": ", ".join(ocr.get("vocabulary", [])) if ocr.get("enabled") else "",
             "whisper_raw": whisper.get("raw_output", "\u2014"),
             "pp_output": pp.get("output", "\u2014") if pp.get("enabled") else "",
             "pp_enabled": pp.get("enabled", False),
@@ -394,7 +398,7 @@ class DebugManager(QObject):
     def _write_csv(self, sessions, csv_path):
         """Write session data to CSV for external analysis."""
         fields = [
-            "timestamp", "duration", "model", "app_type", "window", "names",
+            "timestamp", "duration", "model", "app_type", "window", "names", "words",
             "whisper_raw", "pp_output", "cleanup_str", "dict_str",
             "final_text", "confidence",
             "ocr_ms", "whisper_ms", "pp_ms", "total_ms",
@@ -461,6 +465,7 @@ class DebugManager(QObject):
                 <td class="timing">{total_str}<br><span class="detail">{timing_detail}</span></td>
                 <td>{self._esc(r["delivery"])}</td>
                 <td>{self._esc(r["names"])}</td>
+                <td>{self._esc(r["words"])}</td>
                 <td>{learn_cell}</td>
             </tr>""")
 
@@ -536,6 +541,7 @@ class DebugManager(QObject):
         <th>Timing</th>
         <th>Delivery</th>
         <th>OCR Names</th>
+        <th>OCR Words</th>
         <th>Learning</th>
     </tr>
 </thead>

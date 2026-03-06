@@ -101,7 +101,18 @@ class DictionaryProcessor:
                 max_win = min(4, max(2, len(norm_correct) // 3 + 1))
 
                 for ws in range(1, min(max_win + 1, len(words) - i + 1)):
-                    window_text = ' '.join(words[i:i + ws])
+                    window_words = words[i:i + ws]
+
+                    # Skip multi-word windows that already contain the correct
+                    # word — the target is already there, nothing to fix.
+                    # Without this, "to Claude" matches "Claude" and eats "to".
+                    if ws > 1 and any(
+                        re.sub(r'[^a-z0-9]', '', w.lower()) == norm_correct
+                        for w in window_words
+                    ):
+                        continue
+
+                    window_text = ' '.join(window_words)
                     norm_window = re.sub(r'[^a-z0-9]', '', window_text.lower())
 
                     if not norm_window:

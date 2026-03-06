@@ -113,6 +113,17 @@ class PostProcessor:
         "yeah", "hmm", "ah", "oh",
     })
 
+    # Contraction forms (after apostrophe removal) — these are legitimate
+    # transformations, not new words introduced by the model
+    _CONTRACTION_FORMS = frozenset({
+        "dont", "doesnt", "didnt", "cant", "couldnt", "shouldnt", "wouldnt",
+        "wont", "isnt", "arent", "wasnt", "werent", "havent", "hasnt", "hadnt",
+        "theyre", "theyll", "theyve", "theyd", "youre", "youll", "youve",
+        "youd", "were", "well", "weve", "wed", "hes", "shes", "thats",
+        "whos", "whats", "lets", "heres", "theres", "wheres", "ive", "ill",
+        "itll", "aint",
+    })
+
     def process(self, raw_text, system_prompt=None):
         """
         Process transcribed text to fix grammar, punctuation, and filler words.
@@ -298,13 +309,30 @@ class PostProcessor:
             )
             return text
 
-        # Guard: if the model deleted >40% of content, it over-compressed
-        if len(text) > 30 and len(cleaned) < len(text) * 0.6:
+        # Guard: if the model deleted >10% of content, it shortened too much
+        if len(text) > 30 and len(cleaned) < len(text) * 0.9:
             self.logger.warning(
                 f"Post-processing content deletion ({100 - int(len(cleaned)/len(text)*100)}% removed): "
                 f"'{cleaned[:80]}', returning original"
             )
             return text
+
+        # Guard: rephrasing — reject if output introduces words the speaker never said
+        if len(text.split()) > 3:
+            input_words = set(
+                w.lower().strip(".,!?;:'\"()-").replace("'", "")
+                for w in text.split()
+            )
+            for w in cleaned.split():
+                w_clean = w.lower().strip(".,!?;:'\"()-").replace("'", "")
+                if (len(w_clean) >= 4
+                        and w_clean not in input_words
+                        and w_clean not in self._CONTRACTION_FORMS):
+                    self.logger.warning(
+                        f"Post-processing rephrasing (new word: '{w_clean}'): "
+                        f"'{cleaned[:80]}', returning original"
+                    )
+                    return text
 
         # Guard: detect answer patterns — model tried to respond instead of clean
         answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",

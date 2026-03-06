@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.2.3 (2026-03-06)
+
+### Improvements
+
+- **OCR extraction split into Names vs Words** — Proper noun extraction now returns two categories: **Names** (person names from the first-names list + @usernames from chat) and **Words** (useful vocabulary like product/company names). Debug panel and HTML report show both separately. Junk words like "Changelog", "Tightened", "Installed" are now aggressively filtered out.
+- **Massively improved OCR word filtering** — Added suffix-based filtering for word endings that never appear in proper nouns (-tion, -ment, -ness, -ful, -less, -ous, -ible, -able, -ize, -ated, -ating, -ology, -ture, -ory). Past tense (-ed), gerund (-ing), adverb (-ly), and agent noun (-er/-or with common root) words are now rejected. Expanded the common English words list from ~240 to ~600+ words covering tech/dev terms. Added -es and -ies plural root detection.
+
+### Bug Fixes
+
+- **Short phrases with names silently discarded** — The prompt hallucination guard was too aggressive (50% threshold), causing legitimate short utterances like "Hey Jordan" to be discarded when the name appeared on screen via OCR. Tightened to only discard when *every* word is an OCR noun (100%), since real hallucinations are pure noun regurgitation while real speech contains non-noun words.
+- **Dictionary fuzzy matcher eating adjacent words** — The sliding-window fuzzy matcher was absorbing common words next to dictionary entries (e.g. "to Claude" matched "Claude" at 0.86 similarity, replacing the whole window and deleting "to"). Multi-word windows that already contain the correct word are now skipped.
+- **Post-processor rephrasing user's words** — Qwen was silently rewriting sentences (e.g. "you have no idea how much I need this" → "I totally need this") instead of just fixing grammar/punctuation. Tightened the content deletion guard from 40% to 10% — if the model removes more than 10% of text length, the original is returned unchanged. Added a new rephrasing guard that rejects output containing any content word (4+ characters) the speaker never said, with a contraction whitelist so legitimate fixes like "do not" → "don't" still pass.
+
 ## v3.2.2 (2026-03-03)
 
 ### New Features

@@ -121,11 +121,14 @@ class DebugPanel(QWidget):
         timing = data.get("timing_ms", 0)
         app_type = data.get("app_type", "unknown")
         title = data.get("window_title", "")
-        nouns = data.get("proper_nouns", [])
+        names = data.get("names", [])
+        vocab = data.get("vocabulary", [])
 
         lines = [f"App: {title}", f"Type: {app_type.upper()}"]
-        if nouns:
-            lines.append(f"Names: {', '.join(nouns)}")
+        if names:
+            lines.append(f"Names: {', '.join(names)}")
+        if vocab:
+            lines.append(f"Words: {', '.join(vocab)}")
 
         self._add_section(f"OCR  \u2713  {self._fmt_time(timing)}", lines, "done")
         self._refresh()

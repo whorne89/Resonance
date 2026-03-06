@@ -25,7 +25,9 @@ class AppType(Enum):
 class ScreenContext:
     raw_text: str
     app_type: AppType
-    proper_nouns: list = field(default_factory=list)
+    proper_nouns: list = field(default_factory=list)  # combined (backward compat)
+    names: list = field(default_factory=list)          # people + usernames
+    vocabulary: list = field(default_factory=list)     # useful terms
     window_title: str = ""
 
 
@@ -231,7 +233,8 @@ _COMMON_UPPER = frozenset({
     "New", "Open", "Save", "Close", "File", "Edit", "View",
     "Help", "Home", "Back", "Next", "Send", "Reply",
     "Delete", "Settings", "Search", "Menu", "Type",
-    "Start", "Stop", "Cancel", "Apply", "Submit",
+    "Start", "Stop", "Cancel", "Apply", "Submit", "Discard",
+    "Esc", "Ctrl", "Alt", "Shift", "Tab", "Enter",
     "Log", "Sign", "Out", "In", "Up", "Down",
     # Email / webmail UI
     "Inbox", "Drafts", "Sent", "Items", "Junk", "Email",
@@ -307,6 +310,76 @@ _COMMON_ENGLISH_WORDS = frozenset({
     "when", "where", "which", "while", "who", "why", "will", "with",
     "work", "worked", "working", "would", "write",
     "yeah", "yes", "yet", "you", "your",
+    # Additional common words / tech terms for OCR filtering
+    "access", "account", "act", "app", "area", "asset",
+    "base", "batch", "bind", "bit", "block", "board", "body", "book",
+    "box", "branch", "bug", "bump",
+    "cache", "case", "center", "channel", "changelog", "chunk", "class",
+    "clean", "clip", "code", "commit", "compile", "config", "connect",
+    "content", "control", "copy", "copyright", "core", "count", "cover",
+    "crash", "crop", "cut",
+    "data", "deal", "demo", "deploy", "detail", "device", "dialog",
+    "diff", "directory", "display", "dock", "door", "draft", "draw", "drive", "drop",
+    "effect", "enough", "entry", "event", "example", "execute", "export",
+    "face", "fact", "factory", "fall", "family", "fast", "feature",
+    "feel", "fetch", "field", "fight", "figure", "file", "fill", "final",
+    "fix", "flag", "flow", "focus", "folder", "follow", "food", "foot",
+    "force", "form", "format", "frame", "free", "front", "full",
+    "game", "generate", "glass", "global", "grab", "grid", "group",
+    "grow", "guard", "guess", "guide",
+    "half", "hand", "handle", "hang", "happen", "hard", "hash", "head",
+    "hear", "heart", "hold", "hook", "hope", "host", "hot", "house",
+    "human",
+    "idea", "image", "import", "index", "info", "input", "install",
+    "issue", "item",
+    "job", "join",
+    "key", "kill", "kind",
+    "land", "large", "late", "launch", "lay", "layer", "layout",
+    "lead", "learn", "least", "leave", "less", "letter", "level",
+    "library", "license", "lie", "life", "light", "link", "listen",
+    "live", "load", "local", "lock", "log", "long", "loop", "lose",
+    "love", "low",
+    "manage", "mark", "master", "matter", "max", "mean", "meet",
+    "merge", "message", "method", "micro", "min", "mind", "minor",
+    "minute", "miss", "mock", "mode", "model", "module", "moment",
+    "money", "monitor", "morning", "mount", "mouth", "music",
+    "near", "net", "nice", "night", "node", "none", "notice", "number",
+    "offer", "offset", "option", "output", "own",
+    "pack", "package", "pair", "panel", "paper", "parent", "parse",
+    "party", "patch", "pay", "people", "person", "pick", "piece",
+    "pin", "pipe", "plan", "play", "please", "plot", "plug", "port",
+    "post", "power", "present", "press", "preview", "print", "problem",
+    "process", "produce", "profile", "program", "project", "prompt",
+    "protect", "provide", "publish", "purge", "push",
+    "question", "queue", "quick", "quite",
+    "raise", "range", "rate", "raw", "reach", "real", "reason",
+    "record", "red", "reduce", "register", "reinstall", "release",
+    "reload", "remember", "render", "repo", "report", "request",
+    "require", "reset", "resolve", "response", "rest", "restart",
+    "restore", "result", "return", "revert", "role", "room", "root",
+    "route", "rule",
+    "scan", "schedule", "scope", "screen", "script", "scroll",
+    "second", "section", "seed", "seem", "segment", "select", "sense",
+    "serve", "server", "session", "setup", "share", "shell", "shift",
+    "short", "side", "signal", "simple", "single", "sit", "six",
+    "skip", "sleep", "slot", "small", "snap", "social", "socket",
+    "sort", "source", "speak", "spec", "specific", "spend", "split",
+    "stack", "stage", "stand", "state", "stay", "step", "stock",
+    "store", "story", "stream", "string", "strip", "strong", "struct",
+    "study", "style", "suggest", "support", "swap", "switch", "symbol",
+    "sync", "system",
+    "tab", "table", "tag", "talk", "target", "task", "team", "template",
+    "ten", "terminal", "test", "thank", "theme", "thread", "three",
+    "throw", "tick", "timer", "title", "today", "together", "token",
+    "tonight", "tool", "total", "toward", "trace", "track", "trade",
+    "train", "tree", "trigger", "trim", "true", "trust", "tunnel", "type",
+    "understand", "unit", "until", "upgrade", "upload", "upon", "user",
+    "value", "vendor", "version", "view", "virtual", "visit", "voice",
+    "wait", "walk", "wall", "war", "warn", "watch", "water", "web",
+    "week", "weight", "whisper", "white", "whole", "widget", "win",
+    "window", "wire", "wish", "without", "wonder", "word", "world",
+    "wrap", "wrong",
+    "yield", "young", "zone",
 })
 
 # Common first names — these bypass frequency requirements and go straight
@@ -317,7 +390,7 @@ _COMMON_FIRST_NAMES = frozenset({
     "anthony", "ashley", "austin", "barbara", "benjamin", "beth", "blake",
     "brandon", "brian", "brittany", "bruce", "caleb", "carl", "carol",
     "caroline", "catherine", "charles", "charlotte", "chris", "christian",
-    "christina", "christopher", "claire", "connor", "cory", "craig",
+    "christina", "christopher", "claire", "claude", "connor", "cory", "craig",
     "daniel", "danielle", "david", "dean", "deborah", "derek", "diana",
     "dominic", "donald", "donna", "dorothy", "douglas", "drew", "dylan",
     "edward", "elena", "eli", "elizabeth", "emily", "emma", "eric", "erik",
@@ -332,8 +405,8 @@ _COMMON_FIRST_NAMES = frozenset({
     "karen", "kate", "katherine", "kathleen", "kathryn", "katie", "keith",
     "kelly", "ken", "kenneth", "kevin", "kim", "kimberly", "kyle",
     "larry", "laura", "lauren", "lawrence", "lee", "leo", "leslie",
-    "liam", "linda", "lisa", "logan", "lucas", "luis", "luke", "lynn",
-    "madison", "margaret", "maria", "marie", "mark", "martha", "martin",
+    "liam", "lily", "linda", "lisa", "logan", "lucas", "luis", "luke", "lynn",
+    "madison", "margaret", "maria", "marie", "mark", "martha", "martin", "max",
     "mary", "mason", "matt", "matthew", "megan", "melissa", "michael",
     "michelle", "mike", "miranda", "mitchell", "monica", "morgan", "nancy",
     "natalie", "nathan", "nicholas", "nick", "nicole", "noah", "nolan",
@@ -349,6 +422,14 @@ _COMMON_FIRST_NAMES = frozenset({
     "victor", "victoria", "vincent", "virginia", "walter", "wayne",
     "wendy", "william", "zachary",
 })
+
+# Word-forming suffixes that never appear in proper nouns.
+# Checked AFTER the names list, so known names like "Lawrence" (-ence) survive.
+_NEVER_NAME_SUFFIXES = (
+    "tion", "sion", "ment", "ness", "ful", "less",
+    "ous", "ious", "ible", "able", "ize", "ise",
+    "ated", "ating", "ology", "ture", "ory",
+)
 
 # ── App detection keywords ───────────────────────────────────────────
 
@@ -406,16 +487,19 @@ class ScreenContextEngine:
 
             raw_text = self._extract_text(image)
             app_type = self._detect_app_type(raw_text, title)
-            proper_nouns = self._extract_proper_nouns(raw_text)
+            extracted_names, extracted_vocab = self._extract_proper_nouns(raw_text)
 
             self.logger.info(
-                f"OCR: app={app_type.value}, nouns={len(proper_nouns)}, "
+                f"OCR: app={app_type.value}, "
+                f"names={len(extracted_names)}, words={len(extracted_vocab)}, "
                 f"text={len(raw_text)} chars, title='{title[:50]}'"
             )
             return ScreenContext(
                 raw_text=raw_text,
                 app_type=app_type,
-                proper_nouns=proper_nouns,
+                proper_nouns=extracted_names + extracted_vocab,
+                names=extracted_names,
+                vocabulary=extracted_vocab,
                 window_title=title,
             )
         except Exception as e:
@@ -518,22 +602,34 @@ class ScreenContextEngine:
     # ── Proper noun extraction ───────────────────────────────────────
 
     def _extract_proper_nouns(self, ocr_text):
-        """Extract likely proper nouns from OCR text.
+        """Extract names and vocabulary from OCR text.
 
-        Filters out common English words that happen to be capitalized
-        (sentence starters), verb forms (past tense -ed, gerund -ing,
-        plural -s), and ALL-CAPS words >4 chars (headings/acronyms).
+        Returns (names, vocabulary) tuple where:
+        - names: person names + @usernames detected on screen
+        - vocabulary: useful proper nouns (products, companies, etc.)
+
+        Aggressively filters common English words, verb forms, and
+        words with non-name suffixes to minimize junk.
         """
         words = ocr_text.split()
         names = []
-        other_nouns = []
+        vocabulary = []
         seen = set()
 
+        # Phase 1: Extract @-mentions as usernames
+        for word in words:
+            if word.startswith("@") and len(word) > 2:
+                username = word[1:].strip(".,!?:;\"'()[]{}")
+                if username and username.lower() not in seen:
+                    seen.add(username.lower())
+                    names.append(username)
+
+        # Phase 2: Process capitalized words
         for word in words:
             clean = word.strip(".,!?:;\"'()[]{}")
             if not clean or len(clean) < 2:
                 continue
-            # Skip words with non-alpha noise (OCR artifacts like "BcTg", "QLabe1C")
+            # Skip words with non-alpha noise (OCR artifacts)
             if not clean.isalpha() and not clean.replace("'", "").isalpha():
                 continue
             if not clean[0].isupper():
@@ -548,31 +644,54 @@ class ScreenContextEngine:
             if lower in seen:
                 continue
 
-            # Reject if lowercase form is a common English word
+            # Known first name → always add to names, skip all other filters
+            if lower in _COMMON_FIRST_NAMES:
+                seen.add(lower)
+                names.append(clean)
+                continue
+
+            # ── Vocabulary filtering (aggressive) ──
+
+            # Common English word
             if lower in _COMMON_ENGLISH_WORDS:
                 continue
 
-            # Reject verb suffixes: -ed, -ing, -s pointing to common roots
-            if (len(clean) > 4 and lower.endswith("ed")
-                    and lower[:-2] in _COMMON_ENGLISH_WORDS):
+            # Suffixes that never appear in proper nouns
+            if len(clean) > 5 and any(lower.endswith(s) for s in _NEVER_NAME_SUFFIXES):
                 continue
-            if (len(clean) > 5 and lower.endswith("ing")
-                    and lower[:-3] in _COMMON_ENGLISH_WORDS):
+
+            # Past tense -ed (Tightened, Bumped, Installed...)
+            if len(clean) > 4 and lower.endswith("ed"):
                 continue
-            if (len(clean) > 3 and lower.endswith("s")
-                    and lower[:-1] in _COMMON_ENGLISH_WORDS):
+
+            # Gerund -ing (Running, Testing, Installing...)
+            if len(clean) > 5 and lower.endswith("ing"):
                 continue
+
+            # Adverbs -ly (Actually, Really, Recently...)
+            if len(clean) > 4 and lower.endswith("ly"):
+                continue
+
+            # Plural/verb -s/-es/-ies pointing to common roots
+            if len(clean) > 3 and lower.endswith("s"):
+                root_s = lower[:-1]
+                root_es = lower[:-2] if lower.endswith("es") else None
+                root_ies = lower[:-3] + "y" if lower.endswith("ies") else None
+                if (root_s in _COMMON_ENGLISH_WORDS
+                        or (root_es and root_es in _COMMON_ENGLISH_WORDS)
+                        or (root_ies and root_ies in _COMMON_ENGLISH_WORDS)):
+                    continue
+
+            # Agent noun -er/-or with common root (Installer, Builder...)
+            if len(clean) > 4 and (lower.endswith("er") or lower.endswith("or")):
+                root = lower[:-2]
+                if root in _COMMON_ENGLISH_WORDS:
+                    continue
 
             seen.add(lower)
+            vocabulary.append(clean)
 
-            # Prioritize likely names (from name list) over other nouns
-            if lower in _COMMON_FIRST_NAMES:
-                names.append(clean)
-            else:
-                other_nouns.append(clean)
-
-        # Names first so they survive truncation
-        return (names + other_nouns)[:30]
+        return names[:15], vocabulary[:20]
 
     # ── Static helpers (used by TranscriptionWorker) ─────────────────
 

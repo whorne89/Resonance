@@ -102,7 +102,8 @@ class TranscriptionWorker(QObject):
 
                 if self.logger:
                     self.logger.info(f"OCR context: app_type={self.ocr_context.app_type.value}, "
-                                    f"nouns={self.ocr_context.proper_nouns}, "
+                                    f"names={self.ocr_context.names}, "
+                                    f"words={self.ocr_context.vocabulary}, "
                                     f"learned_vocab={len(self.learned_vocabulary)}")
 
             if self.logger:
@@ -147,13 +148,15 @@ class TranscriptionWorker(QObject):
                 self._debug_data["after_text_cleanup"] = text
 
             # Guard: detect Whisper hallucinating from initial_prompt
-            # If transcription is short and mostly contains OCR nouns, it's not real speech
+            # Whisper regurgitates OCR nouns as output even from silence/noise.
+            # Only discard when EVERY word is an OCR noun (pure regurgitation).
+            # Mixed phrases like "Hey Jordan" contain non-noun words, indicating real speech.
             if text and self.ocr_context and self.ocr_context.proper_nouns:
                 words = text.replace('.', ' ').replace(',', ' ').split()
                 if len(words) <= 4:
                     nouns_lower = {n.lower() for n in self.ocr_context.proper_nouns}
                     noun_hits = sum(1 for w in words if w.lower() in nouns_lower)
-                    if noun_hits >= len(words) * 0.5:
+                    if noun_hits == len(words):
                         if self.logger:
                             self.logger.warning(
                                 f"Prompt hallucination detected: '{text}' — "
@@ -425,6 +428,7 @@ class VTTApplication(QObject):
                             self.debug_manager.record_ocr(
                                 ctx.app_type.value, ctx.window_title,
                                 ctx.proper_nouns, len(ctx.raw_text),
+                                names=ctx.names, vocabulary=ctx.vocabulary,
                             )
                         # Feed learning engine with OCR data
                         if self._current_ocr_context and self.learning_engine:
