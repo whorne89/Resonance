@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.3.0 (2026-03-06)
+
+### New Features
+
+- **Cross-platform support (Linux & macOS)** — Resonance now runs on Linux and macOS in addition to Windows. Platform-conditional dependencies install the right packages per OS: winocr on Windows, Tesseract OCR + pywinctl on Linux/macOS. Sound effects use QSoundEffect (PySide6 QtMultimedia) instead of winsound. Post-processor downloads the correct llama-server binary per platform. Audio recorder cascades sample rates for devices that don't support 16kHz. Keyboard paste uses Cmd+V on macOS.
+
 ## v3.2.3 (2026-03-06)
 
 ### Improvements
