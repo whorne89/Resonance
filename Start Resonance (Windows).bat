@@ -1,9 +1,4 @@
 @echo off
-if not "%1"=="hideconsole" (
-    start /min "" cmd /c ""%~f0" hideconsole"
-    exit /b
-)
-
 cd /d "%~dp0"
 
 REM Use local cache to avoid OneDrive hardlink issues
@@ -14,5 +9,4 @@ if not exist ".venv" (
     uv sync
 )
 
-start /B uv run pythonw src\main.py
-exit
+start "" .venv\Scripts\pythonw.exe src\main.py

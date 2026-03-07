@@ -50,19 +50,26 @@ def setup_logger(name="Resonance", log_dir=None, level=logging.INFO):
     )
 
     # File handler with rotation (max 5MB per file, keep 3 backup files)
+    # Use UTF-8 encoding to handle window titles with Unicode characters
+    # (e.g. "✳ Claude Code" contains U+2733 which cp1252 can't encode)
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=5 * 1024 * 1024,  # 5 MB
-        backupCount=3
+        backupCount=3,
+        encoding='utf-8',
     )
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     # Console handler for warnings and errors
+    # Use errors='replace' to avoid crashes from Unicode characters
+    # that the console encoding (e.g. cp1252) can't handle
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(formatter)
+    if hasattr(console_handler.stream, 'reconfigure'):
+        console_handler.stream.reconfigure(errors='replace')
     logger.addHandler(console_handler)
 
     logger.info(f"Logger initialized. Log file: {log_file}")

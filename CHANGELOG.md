@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.3.1 (2026-03-07)
+
+### Bug Fixes
+
+- **App crash from Unicode window titles** — The log file handler used Windows' cp1252 encoding by default, which can't encode Unicode characters like `✳` or `⠐` found in window titles (e.g. Claude Code's terminal title). This caused `UnicodeEncodeError` in the file handler's `stream.write()`, silently breaking the transcription pipeline and causing hangs or crashes. Fixed by setting `encoding='utf-8'` on the `RotatingFileHandler` and `errors='replace'` on the console handler.
+- **No-console batch file not launching** — `Start Resonance (Windows).bat` used `start /B` which attaches the process to the parent console. When the batch file's `exit` closed the console, the Resonance process was killed. Fixed by using `start ""` with `pythonw.exe` directly from the venv, which creates an independent process that survives the batch file closing.
+
 ## v3.3.0 (2026-03-06)
 
 ### New Features

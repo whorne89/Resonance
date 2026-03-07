@@ -33,11 +33,38 @@ A local voice-to-text dictation application using OpenAI Whisper with AI post-pr
 ## Installation
 
 1. Clone or download this repository
+
 2. **Install uv** (if not already installed):
+
+   **Windows** (PowerShell):
    ```powershell
    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
-3. **Run the application:** Double-click `START RESONANCE.bat`
+
+   **Linux / macOS** (terminal):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. **Linux/macOS only** — install Tesseract OCR (optional, for On-Screen Recognition):
+   ```bash
+   # Linux (Debian/Ubuntu)
+   sudo apt-get install tesseract-ocr
+
+   # macOS
+   brew install tesseract
+   ```
+
+4. **Run the application:**
+
+   | Platform | Script |
+   |----------|--------|
+   | **Windows** | Double-click `Start Resonance (Windows).bat` |
+   | **Linux / macOS** | Run `./Start Resonance (Linux, Mac).sh` |
+
+   On first launch, dependencies install automatically and the speech model downloads (~140 MB).
+
+   > **Troubleshooting?** Use the "with console" variant (`Start Resonance (Windows, with console).bat` or `Start Resonance (Linux, Mac, with console).sh`) to see detailed output.
 
 ## Usage
 
@@ -183,11 +210,11 @@ Builds persistent per-app profiles that improve over time. Two things are added 
 
 Make sure `uv` is installed (see Installation step 2) and restart your terminal/command prompt after installation to refresh your PATH.
 
-### OneDrive/Cloud Sync Error
+### OneDrive/Cloud Sync Error (Windows)
 
-The startup batch file uses a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
+The launch scripts set a local cache (`UV_CACHE_DIR`) to avoid OneDrive hardlink issues. If you still see hardlink errors, your uv cache may be in an OneDrive-synced AppData folder.
 
-**Solution:** Edit `START RESONANCE.bat` and change `uv sync --no-audit` to `uv sync --no-audit --link-mode=copy`
+**Solution:** Edit the launch script and add `--link-mode=copy` to the `uv sync` command.
 
 ### No transcription output
 
@@ -217,11 +244,11 @@ MIT License
 
 ## Roadmap
 
-- **In-app updater** — Check GitHub for new versions from Settings. Source installs update via `git pull` + `uv sync`; future exe builds will download from GitHub Releases. Version check logic is shared between both.
 - **Light / Dark / System theme** — Toggle between light mode, dark mode, or follow the system setting. Each can be selected independently in Settings.
+- ~~**In-app updater**~~ — Shipped in v3.1.1.
 - ~~**On-screen recognition (OCR)**~~ — Shipped in v3.0.0.
 - ~~**Self-learning recognition**~~ — Shipped in v3.0.0.
-- **macOS support** — Single Python codebase for Windows and Mac with platform-specific abstractions for sound, hotkeys, and typing.
+- ~~**Cross-platform (Linux & macOS)**~~ — Shipped in v3.3.0.
 
 ## Changelog
 
