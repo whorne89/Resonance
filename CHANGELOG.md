@@ -6,7 +6,8 @@
 
 - **First-run model loading hint** — Startup toast now shows "First use may take longer while the model loads" on every launch, since the first transcription after each restart is always slower due to model loading into memory.
 - **Application window icon** — Settings, About, and other dialogs now show the Resonance icon in the taskbar and title bar instead of the default Python icon.
-- **Pause media during recording** — New toggle in Audio Settings (on by default) that sends a media play/pause key when recording starts and resumes playback after transcription completes. Prevents background music from interfering with voice capture. Uses native Windows API (keybd_event) for reliable media key simulation, with pynput fallback on Linux/macOS. Handles all exit paths: normal completion, empty audio, errors, and overlapping recordings.
+- **Pause media during recording** — New toggle in Audio Settings (on by default) that sends a media play/pause key when recording starts and resumes playback when recording stops (on hotkey release). Prevents background music from interfering with voice capture. Uses native Windows API (keybd_event) for reliable media key simulation, with pynput fallback on Linux/macOS.
+- **Cross-platform auto-updater** — The auto-update apply step now works on Linux and macOS (bundled installs), not just Windows. Uses a platform-native shell script to wait for process exit, copy new files, and relaunch.
 
 ## v3.3.2 (2026-03-09)
 

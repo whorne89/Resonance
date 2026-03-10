@@ -141,10 +141,10 @@ class UpdateChecker:
 
     def apply_update(self, downloaded_path):
         """
-        Apply an update for bundled EXE installs.
+        Apply an update for bundled installs (Windows EXE, Linux/macOS app).
 
-        Extracts the ZIP to the system temp directory, writes a batch script
-        that waits for this process to exit, copies new files over the
+        Extracts the ZIP to the system temp directory, writes a platform-native
+        script that waits for this process to exit, copies new files over the
         existing install, relaunches, and cleans up.
 
         Args:
@@ -175,61 +175,111 @@ class UpdateChecker:
             pid = os.getpid()
             exe_path = sys.executable
 
-            # Write batch script to system temp
-            bat_path = os.path.join(tempfile.gettempdir(), "_resonance_update.bat")
-            log_path = os.path.join(tempfile.gettempdir(), "_resonance_update.log")
+            if sys.platform == "win32":
+                success = self._apply_update_windows(
+                    app_dir, source_dir, temp_root, downloaded_path, pid, exe_path
+                )
+            else:
+                success = self._apply_update_unix(
+                    app_dir, source_dir, temp_root, downloaded_path, pid, exe_path
+                )
 
-            bat_content = (
-                "@echo off\n"
-                f'echo [%date% %time%] Update script started > "{log_path}"\n'
-                f'echo [%date% %time%] Waiting for PID {pid} to exit >> "{log_path}"\n'
-                ":waitloop\n"
-                f'tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL\n'
-                "if not errorlevel 1 (\n"
-                "    timeout /t 1 /nobreak >NUL\n"
-                "    goto waitloop\n"
-                ")\n"
-                f'echo [%date% %time%] Process exited, cleaning old dist-info >> "{log_path}"\n'
-                f'pushd "{app_dir}\\_internal"\n'
-                f'for /D %%d in (resonance-*.dist-info) do (\n'
-                f'    echo [%date% %time%] Removing %%d >> "{log_path}"\n'
-                f'    rd /S /Q "%%d" 2>NUL\n'
-                f')\n'
-                f'popd\n'
-                f'echo [%date% %time%] Copying new files >> "{log_path}"\n'
-                f'xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >> "{log_path}" 2>&1\n'
-                f'echo [%date% %time%] xcopy exit code: %errorlevel% >> "{log_path}"\n'
-                f'echo [%date% %time%] Relaunching >> "{log_path}"\n'
-                f'start "" "{exe_path}"\n'
-                f'rd /S /Q "{temp_root}" 2>NUL\n'
-                f'del /F /Q "{downloaded_path}" 2>NUL\n'
-                f'echo [%date% %time%] Cleanup done >> "{log_path}"\n'
-                '(goto) 2>NUL & del /F /Q "%~f0"\n'
-            )
-
-            with open(bat_path, "w", encoding="utf-8") as f:
-                f.write(bat_content)
-
-            self.logger.info(f"Update script: {bat_path}")
-            self.logger.info(f"Source: {source_dir} -> {app_dir}")
-
-            # Launch the batch script as a new process group so it survives
-            # our exit. CREATE_NEW_PROCESS_GROUP keeps it alive;
-            # CREATE_NO_WINDOW suppresses the console.
-            subprocess.Popen(
-                ["cmd.exe", "/c", bat_path],
-                creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.CREATE_NO_WINDOW
-                ),
-            )
-
-            self.logger.info("Update script launched, application will restart")
-            return True
+            if success:
+                self.logger.info("Update script launched, application will restart")
+            return success
 
         except Exception as e:
             self.logger.error(f"Failed to apply update: {e}")
             return False
+
+    def _apply_update_windows(self, app_dir, source_dir, temp_root,
+                               downloaded_path, pid, exe_path):
+        """Write and launch a Windows batch script to apply the update."""
+        bat_path = os.path.join(tempfile.gettempdir(), "_resonance_update.bat")
+        log_path = os.path.join(tempfile.gettempdir(), "_resonance_update.log")
+
+        bat_content = (
+            "@echo off\n"
+            f'echo [%date% %time%] Update script started > "{log_path}"\n'
+            f'echo [%date% %time%] Waiting for PID {pid} to exit >> "{log_path}"\n'
+            ":waitloop\n"
+            f'tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL\n'
+            "if not errorlevel 1 (\n"
+            "    timeout /t 1 /nobreak >NUL\n"
+            "    goto waitloop\n"
+            ")\n"
+            f'echo [%date% %time%] Process exited, cleaning old dist-info >> "{log_path}"\n'
+            f'pushd "{app_dir}\\_internal"\n'
+            f'for /D %%d in (resonance-*.dist-info) do (\n'
+            f'    echo [%date% %time%] Removing %%d >> "{log_path}"\n'
+            f'    rd /S /Q "%%d" 2>NUL\n'
+            f')\n'
+            f'popd\n'
+            f'echo [%date% %time%] Copying new files >> "{log_path}"\n'
+            f'xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >> "{log_path}" 2>&1\n'
+            f'echo [%date% %time%] xcopy exit code: %errorlevel% >> "{log_path}"\n'
+            f'echo [%date% %time%] Relaunching >> "{log_path}"\n'
+            f'start "" "{exe_path}"\n'
+            f'rd /S /Q "{temp_root}" 2>NUL\n'
+            f'del /F /Q "{downloaded_path}" 2>NUL\n'
+            f'echo [%date% %time%] Cleanup done >> "{log_path}"\n'
+            '(goto) 2>NUL & del /F /Q "%~f0"\n'
+        )
+
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat_content)
+
+        self.logger.info(f"Update script: {bat_path}")
+        self.logger.info(f"Source: {source_dir} -> {app_dir}")
+
+        subprocess.Popen(
+            ["cmd.exe", "/c", bat_path],
+            creationflags=(
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.CREATE_NO_WINDOW
+            ),
+        )
+        return True
+
+    def _apply_update_unix(self, app_dir, source_dir, temp_root,
+                            downloaded_path, pid, exe_path):
+        """Write and launch a shell script to apply the update on Linux/macOS."""
+        script_path = os.path.join(tempfile.gettempdir(), "_resonance_update.sh")
+        log_path = os.path.join(tempfile.gettempdir(), "_resonance_update.log")
+
+        script_content = (
+            "#!/bin/bash\n"
+            f'echo "$(date) Update script started" > "{log_path}"\n'
+            f'echo "$(date) Waiting for PID {pid} to exit" >> "{log_path}"\n'
+            f'while kill -0 {pid} 2>/dev/null; do sleep 1; done\n'
+            f'echo "$(date) Process exited, cleaning old dist-info" >> "{log_path}"\n'
+            f'rm -rf "{app_dir}/_internal/"resonance-*.dist-info 2>/dev/null\n'
+            f'echo "$(date) Copying new files" >> "{log_path}"\n'
+            f'cp -rf "{source_dir}/"* "{app_dir}/" >> "{log_path}" 2>&1\n'
+            f'echo "$(date) Copy exit code: $?" >> "{log_path}"\n'
+            f'chmod +x "{exe_path}" 2>/dev/null\n'
+            f'echo "$(date) Relaunching" >> "{log_path}"\n'
+            f'nohup "{exe_path}" >/dev/null 2>&1 &\n'
+            f'rm -rf "{temp_root}" 2>/dev/null\n'
+            f'rm -f "{downloaded_path}" 2>/dev/null\n'
+            f'echo "$(date) Cleanup done" >> "{log_path}"\n'
+            f'rm -f "{script_path}"\n'
+        )
+
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script_content)
+        os.chmod(script_path, 0o755)
+
+        self.logger.info(f"Update script: {script_path}")
+        self.logger.info(f"Source: {source_dir} -> {app_dir}")
+
+        subprocess.Popen(
+            ["bash", script_path],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
 
     @staticmethod
     def get_source_update_message(update_info):
