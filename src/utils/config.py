@@ -343,7 +343,7 @@ class ConfigManager:
 
     def get_pause_media_enabled(self):
         """Get whether media pause during recording is enabled."""
-        return self.get("audio", "pause_media_during_recording", default=False)
+        return self.get("audio", "pause_media_during_recording", default=True)
 
     def set_pause_media_enabled(self, enabled):
         """Set whether media pause during recording is enabled."""

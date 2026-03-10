@@ -64,6 +64,9 @@ class RecordingOverlay(QWidget):
         self._accuracy = None  # 0.0-1.0 or None
         self._detected_app = None  # e.g. "chat", "email", "code"
 
+        # Hint text shown below the pill (e.g. first-run model loading message)
+        self._hint = None
+
         # Window setup
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -117,6 +120,14 @@ class RecordingOverlay(QWidget):
         """
         self._detected_app = app_type
 
+    def set_hint(self, text):
+        """Set a hint message shown below the pill during recording."""
+        self._hint = text
+
+    def clear_hint(self):
+        """Remove the hint message."""
+        self._hint = None
+
     def _active_badges(self):
         """Return the list of badge labels for the current state."""
         if self._state == "typing":
@@ -131,12 +142,14 @@ class RecordingOverlay(QWidget):
         return []
 
     def _total_height(self):
-        """Total widget height including badge area if badges are active."""
+        """Total widget height including badge area and hint area."""
+        h = self.PILL_HEIGHT
         n = len(self._active_badges())
         if n:
-            badges = n * self.BADGE_HEIGHT + (n - 1) * self.BADGE_SPACING + self.BADGE_GAP
-            return self.PILL_HEIGHT + badges
-        return self.PILL_HEIGHT
+            h += n * self.BADGE_HEIGHT + (n - 1) * self.BADGE_SPACING + self.BADGE_GAP
+        if self._hint:
+            h += self.BADGE_GAP + self.BADGE_HEIGHT
+        return h
 
     def _position_on_screen(self):
         """Position the overlay at bottom-center of the primary screen."""
@@ -174,9 +187,14 @@ class RecordingOverlay(QWidget):
     def show_processing(self):
         """Transition to processing state."""
         self._state = "processing"
+        self._hint = None
         self._bar_heights = [0.0] * self.BAR_COUNT
         self._proc_dot_index = 0
         self._proc_tick = 0
+        # Restore pill width in case hint widened it
+        if self.width() != self.PILL_WIDTH:
+            self.setFixedWidth(self.PILL_WIDTH)
+        self._position_on_screen()
         self.update()
 
     def show_typing(self):
@@ -302,12 +320,19 @@ class RecordingOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Offset: pill is drawn at the bottom of the widget
-        pill_y = self._total_height() - self.PILL_HEIGHT
+        # Calculate pill position: badges above, hint below
+        badges = self._active_badges()
+        n_badges = len(badges)
+        badge_area = (n_badges * self.BADGE_HEIGHT + (n_badges - 1) * self.BADGE_SPACING + self.BADGE_GAP) if n_badges else 0
+        pill_y = badge_area
 
         # Draw badge(s) above the pill (features during recording, accuracy during typing)
-        if self._active_badges():
+        if badges:
             self._paint_badge(painter)
+
+        # Draw hint below the pill
+        if self._hint and self._state == "recording":
+            self._paint_hint(painter, pill_y + self.PILL_HEIGHT + self.BADGE_GAP)
 
         # Draw pill background
         painter.save()
@@ -361,6 +386,39 @@ class RecordingOverlay(QWidget):
                 Qt.AlignmentFlag.AlignCenter,
                 label,
             )
+
+    def _paint_hint(self, painter, y):
+        """Draw a hint badge below the pill."""
+        font = QFont()
+        font.setPixelSize(11)
+        fm = QFontMetrics(font)
+        painter.setFont(font)
+
+        text_width = fm.horizontalAdvance(self._hint)
+        badge_w = int(text_width + 18)
+        badge_r = self.BADGE_HEIGHT // 2
+        badge_x = (self.PILL_WIDTH - badge_w) / 2
+
+        # Widen the widget if the hint text is wider than the pill
+        widget_w = max(self.PILL_WIDTH, badge_w + 20)
+        if widget_w != self.width():
+            self.setFixedWidth(widget_w)
+            self._position_on_screen()
+        badge_x = (widget_w - badge_w) / 2
+
+        path = QPainterPath()
+        path.addRoundedRect(badge_x, y + 0.5, badge_w, self.BADGE_HEIGHT - 1, badge_r, badge_r)
+
+        painter.setPen(QPen(self.BORDER_COLOR, 1))
+        painter.setBrush(QBrush(QColor(26, 26, 46, 200)))
+        painter.drawPath(path)
+
+        painter.setPen(QColor(255, 255, 255, 120))
+        painter.drawText(
+            int(badge_x), int(y), badge_w, self.BADGE_HEIGHT,
+            Qt.AlignmentFlag.AlignCenter,
+            self._hint,
+        )
 
     def _paint_recording(self, painter):
         """Draw recording indicator: pulsing red dot + waveform bars."""

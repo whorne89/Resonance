@@ -349,6 +349,7 @@ class VTTApplication(QObject):
         self.transcription_thread = None
         self.transcription_worker = None
         self._last_audio_samples = 0  # Track sample count for stats
+        self._first_recording_this_launch = True  # Show model loading hint once
 
         # Connect hotkey signals to handlers (thread-safe marshaling)
         self._hotkey_pressed.connect(self.on_hotkey_press)
@@ -464,6 +465,9 @@ class VTTApplication(QObject):
             if self.tray_icon:
                 self.tray_icon.set_recording_state()
             if self.overlay:
+                if self._first_recording_this_launch:
+                    self.overlay.set_hint("First use may be slower while the model loads")
+                    self._first_recording_this_launch = False
                 self.overlay.show_recording()
 
         except Exception as e:
@@ -479,13 +483,15 @@ class VTTApplication(QObject):
             # Stop recording and get audio data
             audio_data = self.audio_recorder.stop_recording()
 
+            # Resume media immediately — recording is done, no longer capturing audio
+            if self.media_controller:
+                self.media_controller.resume_if_paused()
+
             # Play stop tone
             self.sound_effects.play_stop_tone()
 
             if audio_data is None or len(audio_data) == 0:
                 self.logger.warning("No audio data recorded")
-                if self.media_controller:
-                    self.media_controller.resume_if_paused()
                 if self.tray_icon:
                     self.tray_icon.set_idle_state()
                 if self.overlay:
@@ -513,8 +519,6 @@ class VTTApplication(QObject):
 
         except Exception as e:
             self.logger.error(f"Failed to process recording: {e}")
-            if self.media_controller:
-                self.media_controller.resume_if_paused()
             if self.tray_icon:
                 self.tray_icon.show_error(f"Processing failed: {e}")
                 self.tray_icon.set_idle_state()
@@ -745,9 +749,6 @@ class VTTApplication(QObject):
                     # Brief hold before fading out
                     self.overlay.hide_overlay(delay_ms=600)
         finally:
-            # Resume media only if no new recording started (would re-pause anyway)
-            if self.media_controller and not new_recording_active:
-                self.media_controller.resume_if_paused()
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")
 
@@ -793,8 +794,6 @@ class VTTApplication(QObject):
                 self.tray_icon.show_error(f"Transcription failed: {error_msg}")
                 self.tray_icon.set_idle_state()
         finally:
-            if self.media_controller:
-                self.media_controller.resume_if_paused()
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription error handler finished, cleanup will occur via signal")
 
@@ -1034,14 +1033,12 @@ def main():
             osr_status = "OSR: Off"
         use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
         entry_method = "Clipboard" if use_clipboard else "Character-by-character"
-        details = (
+        return (
             f"Model: {model_label}\n"
             f"{osr_status}\n"
             f"Post-processing: {pp_status}\n"
-            f"Entry: {entry_method}\n\n"
-            f"First use may take longer while the model loads"
+            f"Entry: {entry_method}"
         )
-        return details
 
     # Clean up any partial/failed model downloads before checking
     vtt_app.transcriber.clean_partial_download(model_id)
