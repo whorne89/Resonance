@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.6.1 (2026-03-10)
+
+### Bug Fixes
+
+- **Auto-update verification release** — No code changes; re-release to verify the auto-update pipeline delivers all settings UI components (media pause toggle) correctly on target machines.
+
 ## v3.6.0 (2026-03-10)
 
 ### New Features
