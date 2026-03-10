@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.4.0 (2026-03-09)
+
+### New Features
+
+- **First-run model loading hint** — Startup toast now shows "First use may take longer while the model loads" when no transcription has been done yet. The hint disappears after the first successful transcription.
+- **Application window icon** — Settings, About, and other dialogs now show the Resonance icon in the taskbar and title bar instead of the default Python icon.
+- **Pause media during recording** — New toggle in Audio Settings that sends a media play/pause key when recording starts and resumes playback after transcription completes. Prevents background music from interfering with voice capture. Handles all exit paths: normal completion, empty audio, errors, and overlapping recordings.
+
+## v3.3.2 (2026-03-09)
+
+### Bug Fixes
+
+- **OCR hallucination guard 0/0 bug** — Punctuation-only transcriptions (e.g. `"... ... ..."`) were silently discarded because stripping periods/commas produced an empty word list, and `0 == 0` passed the "all words are OCR nouns" check. Added `len(words) > 0` guard so empty word lists are no longer treated as hallucinations.
+- **Filler word filter too aggressive** — Single-word legitimate inputs like "You", "Oh", "Okay", "Well" were being deleted because the filler set included common real words. Trimmed the filler set to actual fillers only (um, uh, hmm, ah, basically, yeah) and added a minimum of 2 words before the filter activates — single-word inputs are never filtered.
+- **Dictionary fuzzy matcher eating adjacent words** — Multi-word sliding windows in fuzzy matching could absorb neighboring words (e.g. "on Claude" fuzzy-matching to "Claude", deleting "on"). Restricted fuzzy matching to single-word windows only. Multi-word exact matching is unaffected.
+- **Rephrasing guard rejecting valid grammar fixes** — The post-processing guard that catches LLM rephrasing was rejecting legitimate inflection corrections (e.g. "suggesting" → "suggest") because the corrected form wasn't in the original word set. Added basic stemming so words sharing the same root are recognized as equivalent.
+
 ## v3.3.1 (2026-03-07)
 
 ### Bug Fixes

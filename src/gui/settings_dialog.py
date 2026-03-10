@@ -917,6 +917,20 @@ class SettingsDialog(RoundedDialog):
         self.test_button.clicked.connect(self.test_microphone)
         layout.addRow("", self.test_button)
 
+        # Pause media checkbox + description
+        self.pause_media_cb = QCheckBox("Pause media during recording")
+        pause_media_desc = QLabel(
+            "Pauses playing music while recording and resumes when done"
+        )
+        pause_media_desc.setWordWrap(True)
+        pause_media_desc.setStyleSheet("color: rgba(255, 255, 255, 140); font-size: 11px;")
+
+        pause_col = QVBoxLayout()
+        pause_col.setSpacing(2)
+        pause_col.addWidget(self.pause_media_cb)
+        pause_col.addWidget(pause_media_desc)
+        layout.addRow("", pause_col)
+
         group.setLayout(layout)
         return group
 
@@ -1499,6 +1513,9 @@ class SettingsDialog(RoundedDialog):
         else:
             self.typing_char_radio.setChecked(True)
 
+        # Pause media
+        self.pause_media_cb.setChecked(self.config.get_pause_media_enabled())
+
         # Post-processing
         self.post_processing_cb.setChecked(self.config.get_post_processing_enabled())
 
@@ -1538,6 +1555,7 @@ class SettingsDialog(RoundedDialog):
             model_size = self.model_combo.currentData()
             device_idx = self.device_combo.currentData()
             use_clipboard = self.typing_paste_radio.isChecked()
+            pause_media = self.pause_media_cb.isChecked()
             pp_enabled = self.post_processing_cb.isChecked()
             ocr_enabled = self.ocr_cb.isChecked()
             learning_enabled = self.learning_cb.isChecked()
@@ -1559,6 +1577,7 @@ class SettingsDialog(RoundedDialog):
             old_model = self.config.get_model_size()
             old_device = self.config.get_audio_device()
             old_clipboard = self.config.get("typing", "use_clipboard_fallback", default=False)
+            old_pause_media = self.config.get_pause_media_enabled()
             old_pp = self.config.get_post_processing_enabled()
             old_ocr = self.config.get_ocr_enabled()
             old_learning = self.config.get_learning_enabled()
@@ -1573,6 +1592,8 @@ class SettingsDialog(RoundedDialog):
             if use_clipboard != old_clipboard:
                 method = "Clipboard paste" if use_clipboard else "Character-by-character"
                 changes.append(f"Entry method \u2192 {method}")
+            if pause_media != old_pause_media:
+                changes.append(f"Pause media \u2192 {'On' if pause_media else 'Off'}")
             if pp_enabled != old_pp:
                 changes.append(f"Post-processing \u2192 {'On' if pp_enabled else 'Off'}")
             if ocr_enabled != old_ocr:
@@ -1629,6 +1650,7 @@ class SettingsDialog(RoundedDialog):
             self.config.set_model_size(model_size)
             self.config.set_audio_device(device_idx)
             self.config.set("typing", "use_clipboard_fallback", value=use_clipboard)
+            self.config.set_pause_media_enabled(pause_media)
             self.config.set_post_processing_enabled(pp_enabled)
             self.config.set_ocr_enabled(ocr_enabled)
             self.config.set_learning_enabled(learning_enabled)

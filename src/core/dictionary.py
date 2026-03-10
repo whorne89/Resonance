@@ -96,9 +96,10 @@ class DictionaryProcessor:
                 if i < len(words) and words[i].lower() == correct_word.lower():
                     continue
 
-                # Max window size based on correct word length
-                # "Kubernetes" (10 chars) -> up to 4 words ("Cooper Netties")
-                max_win = min(4, max(2, len(norm_correct) // 3 + 1))
+                # Single-word windows only for fuzzy matching — multi-word
+                # windows cause false positives by eating adjacent words
+                # (e.g. "on Claude" fuzzy-matching to "Claude", deleting "on")
+                max_win = 1
 
                 for ws in range(1, min(max_win + 1, len(words) - i + 1)):
                     window_words = words[i:i + ws]

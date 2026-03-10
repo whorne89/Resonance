@@ -134,9 +134,7 @@ class PostProcessor:
 
     # Words that are pure filler — if input is ONLY these, skip LLM
     FILLER_WORDS = frozenset({
-        "um", "uh", "like", "you", "know", "so", "basically",
-        "i", "mean", "right", "okay", "ok", "alright", "well",
-        "yeah", "hmm", "ah", "oh",
+        "um", "uh", "hmm", "ah", "basically", "yeah",
     })
 
     # Contraction forms (after apostrophe removal) — these are legitimate
@@ -165,7 +163,7 @@ class PostProcessor:
 
         # Short input that is entirely filler words — skip LLM to avoid hallucination
         words = raw_text.lower().split()
-        if len(words) <= 6 and all(w.strip(".,!?") in self.FILLER_WORDS for w in words):
+        if 2 <= len(words) <= 6 and all(w.strip(".,!?") in self.FILLER_WORDS for w in words):
             self.logger.info(f"Post-processing: '{raw_text}' -> '' (all fillers)")
             return ""
 
@@ -426,16 +424,38 @@ class PostProcessor:
                 w.lower().strip(".,!?;:'\"()-").replace("'", "")
                 for w in text.split()
             )
+            # Also index stemmed forms so inflection changes
+            # (e.g. suggesting→suggest) don't trigger false rejections
+            input_stems = set()
+            for w in input_words:
+                if len(w) >= 4:
+                    input_stems.add(w)
+                    for suffix in ("ing", "ed", "es", "er", "ly", "tion", "ment", "ness", "able", "ible", "ous", "ful", "less", "ize", "ise"):
+                        if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+                            input_stems.add(w[:-len(suffix)])
+                    if w.endswith("s") and len(w) >= 5:
+                        input_stems.add(w[:-1])
             for w in cleaned.split():
                 w_clean = w.lower().strip(".,!?;:'\"()-").replace("'", "")
-                if (len(w_clean) >= 4
-                        and w_clean not in input_words
-                        and w_clean not in self._CONTRACTION_FORMS):
-                    self.logger.warning(
-                        f"Post-processing rephrasing (new word: '{w_clean}'): "
-                        f"'{cleaned[:80]}', returning original"
-                    )
-                    return text
+                if len(w_clean) < 4:
+                    continue
+                if w_clean in input_words or w_clean in self._CONTRACTION_FORMS:
+                    continue
+                # Check if this word stems to any input stem
+                w_stem = w_clean
+                for suffix in ("ing", "ed", "es", "er", "ly", "tion", "ment", "ness", "able", "ible", "ous", "ful", "less", "ize", "ise"):
+                    if w_clean.endswith(suffix) and len(w_clean) - len(suffix) >= 3:
+                        w_stem = w_clean[:-len(suffix)]
+                        break
+                if w_clean.endswith("s") and len(w_clean) >= 5 and w_stem == w_clean:
+                    w_stem = w_clean[:-1]
+                if w_stem in input_stems:
+                    continue
+                self.logger.warning(
+                    f"Post-processing rephrasing (new word: '{w_clean}'): "
+                    f"'{cleaned[:80]}', returning original"
+                )
+                return text
 
         # Guard: detect answer patterns — model tried to respond instead of clean
         answer_starts = ("sure", "yes,", "yes ", "no,", "no ", "here", "i can",

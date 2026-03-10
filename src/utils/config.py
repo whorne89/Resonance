@@ -51,7 +51,8 @@ class ConfigManager:
         "audio": {
             "sample_rate": 16000,
             "device_index": None,
-            "channels": 1
+            "channels": 1,
+            "pause_media_during_recording": False
         },
         "typing": {
             "speed": 0.01,
@@ -339,6 +340,14 @@ class ConfigManager:
         """Reset configuration to defaults."""
         self.config = self.DEFAULT_CONFIG.copy()
         self.save()
+
+    def get_pause_media_enabled(self):
+        """Get whether media pause during recording is enabled."""
+        return self.get("audio", "pause_media_during_recording", default=False)
+
+    def set_pause_media_enabled(self, enabled):
+        """Set whether media pause during recording is enabled."""
+        self.set("audio", "pause_media_during_recording", value=enabled)
 
     def get_debug_enabled(self):
         """Get whether debug mode is enabled."""

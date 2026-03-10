@@ -20,6 +20,7 @@ import threading
 from datetime import date
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QPushButton
 from PySide6.QtCore import QObject, Signal, QThread, QTimer, Qt
+from PySide6.QtGui import QIcon
 
 from core.debug_manager import DebugManager
 from core.audio_recorder import AudioRecorder
@@ -30,6 +31,7 @@ from core.dictionary import DictionaryProcessor
 from core.learning_engine import KNOWN_APPS, LearningEngine
 from core.post_processor import PostProcessor
 from core.screen_context import AppType, ScreenContextEngine
+from core.media_control import MediaController
 from core.sound_effects import SoundEffects
 from core.text_cleaners import clean_comma_spam, replace_spoken_punctuation
 from gui.recording_overlay import RecordingOverlay
@@ -39,6 +41,7 @@ from gui.theme import apply_theme
 from gui.toast_notification import ClipboardToast, DownloadToast
 from utils.config import ConfigManager
 from utils.logger import setup_logger
+from utils.resource_path import get_resource_path
 
 
 def set_windows_app_id():
@@ -155,7 +158,7 @@ class TranscriptionWorker(QObject):
             # Mixed phrases like "Hey Jordan" contain non-noun words, indicating real speech.
             if text and self.ocr_context and self.ocr_context.proper_nouns:
                 words = text.replace('.', ' ').replace(',', ' ').split()
-                if len(words) <= 4:
+                if 0 < len(words) <= 4:
                     nouns_lower = {n.lower() for n in self.ocr_context.proper_nouns}
                     noun_hits = sum(1 for w in words if w.lower() in nouns_lower)
                     if noun_hits == len(words):
@@ -321,6 +324,11 @@ class VTTApplication(QObject):
         if self.config.get_learning_enabled() and self.screen_context is not None:
             self.learning_engine = LearningEngine()
 
+        # Media controller — pauses/resumes media during recording
+        self.media_controller = None
+        if self.config.get_pause_media_enabled():
+            self.media_controller = MediaController()
+
         # Debug manager (created if debug mode enabled)
         self.debug_manager = None
         self.debug_panel = None
@@ -418,6 +426,10 @@ class VTTApplication(QObject):
             # Play start tone before recording to avoid capturing it
             self.sound_effects.play_start_tone()
 
+            # Pause background media so it doesn't interfere with voice capture
+            if self.media_controller:
+                self.media_controller.pause_if_playing()
+
             self.audio_recorder.start_recording()
 
             # Fire OCR capture in background (non-blocking, runs during recording)
@@ -472,6 +484,8 @@ class VTTApplication(QObject):
 
             if audio_data is None or len(audio_data) == 0:
                 self.logger.warning("No audio data recorded")
+                if self.media_controller:
+                    self.media_controller.resume_if_paused()
                 if self.tray_icon:
                     self.tray_icon.set_idle_state()
                 if self.overlay:
@@ -499,6 +513,8 @@ class VTTApplication(QObject):
 
         except Exception as e:
             self.logger.error(f"Failed to process recording: {e}")
+            if self.media_controller:
+                self.media_controller.resume_if_paused()
             if self.tray_icon:
                 self.tray_icon.show_error(f"Processing failed: {e}")
                 self.tray_icon.set_idle_state()
@@ -729,6 +745,9 @@ class VTTApplication(QObject):
                     # Brief hold before fading out
                     self.overlay.hide_overlay(delay_ms=600)
         finally:
+            # Resume media only if no new recording started (would re-pause anyway)
+            if self.media_controller and not new_recording_active:
+                self.media_controller.resume_if_paused()
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription complete handler finished, cleanup will occur via signal")
 
@@ -774,6 +793,8 @@ class VTTApplication(QObject):
                 self.tray_icon.show_error(f"Transcription failed: {error_msg}")
                 self.tray_icon.set_idle_state()
         finally:
+            if self.media_controller:
+                self.media_controller.resume_if_paused()
             # Always ensure cleanup happens even if there's an exception
             self.logger.info("Transcription error handler finished, cleanup will occur via signal")
 
@@ -868,6 +889,14 @@ class VTTApplication(QObject):
                 self.learning_engine.save()
             self.learning_engine = None
 
+        # Update media controller
+        pause_media = self.config.get_pause_media_enabled()
+        if pause_media and self.media_controller is None:
+            self.media_controller = MediaController()
+        elif not pause_media and self.media_controller is not None:
+            self.media_controller.cancel()
+            self.media_controller = None
+
         # Refresh debug manager
         self._init_debug()
 
@@ -953,6 +982,11 @@ def main():
     app.setApplicationDisplayName("Resonance")
     app.setQuitOnLastWindowClosed(False)  # Keep running with system tray
 
+    # Set application icon for taskbar and window title bars
+    icon_path = get_resource_path("icons/tray_idle.png")
+    if icon_path:
+        app.setWindowIcon(QIcon(icon_path))
+
     # Apply dark theme
     apply_theme(app)
 
@@ -1000,12 +1034,17 @@ def main():
             osr_status = "OSR: Off"
         use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
         entry_method = "Clipboard" if use_clipboard else "Character-by-character"
-        return (
+        details = (
             f"Model: {model_label}\n"
             f"{osr_status}\n"
             f"Post-processing: {pp_status}\n"
             f"Entry: {entry_method}"
         )
+        # Show hint on first-ever launch before any transcription has been done
+        stats = vtt_app.config.get_statistics()
+        if not stats.get("first_used"):
+            details += "\n\nFirst use may take longer while the model loads"
+        return details
 
     # Clean up any partial/failed model downloads before checking
     vtt_app.transcriber.clean_partial_download(model_id)
