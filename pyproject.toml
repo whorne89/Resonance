@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pyinstaller>=6.0"]
+dev = ["pyinstaller>=6.0", "Pillow>=10.0.0"]
 
 [project.scripts]
 resonance = "src.main:main"
