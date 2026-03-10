@@ -1038,12 +1038,9 @@ def main():
             f"Model: {model_label}\n"
             f"{osr_status}\n"
             f"Post-processing: {pp_status}\n"
-            f"Entry: {entry_method}"
+            f"Entry: {entry_method}\n\n"
+            f"First use may take longer while the model loads"
         )
-        # Show hint on first-ever launch before any transcription has been done
-        stats = vtt_app.config.get_statistics()
-        if not stats.get("first_used"):
-            details += "\n\nFirst use may take longer while the model loads"
         return details
 
     # Clean up any partial/failed model downloads before checking

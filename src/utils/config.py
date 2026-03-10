@@ -52,7 +52,7 @@ class ConfigManager:
             "sample_rate": 16000,
             "device_index": None,
             "channels": 1,
-            "pause_media_during_recording": False
+            "pause_media_during_recording": True
         },
         "typing": {
             "speed": 0.01,
