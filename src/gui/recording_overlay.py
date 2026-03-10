@@ -147,8 +147,8 @@ class RecordingOverlay(QWidget):
         n = len(self._active_badges())
         if n:
             h += n * self.BADGE_HEIGHT + (n - 1) * self.BADGE_SPACING + self.BADGE_GAP
-        if self._hint:
-            h += self.BADGE_GAP + self.BADGE_HEIGHT
+        if self._hint and self._state == "processing":
+            h += self.BADGE_GAP + self.HINT_HEIGHT
         return h
 
     def _position_on_screen(self):
@@ -187,32 +187,32 @@ class RecordingOverlay(QWidget):
     def show_processing(self):
         """Transition to processing state."""
         self._state = "processing"
-        self._hint = None
         self._bar_heights = [0.0] * self.BAR_COUNT
         self._proc_dot_index = 0
         self._proc_tick = 0
-        # Restore pill width in case hint widened it
-        if self.width() != self.PILL_WIDTH:
-            self.setFixedWidth(self.PILL_WIDTH)
         self._position_on_screen()
         self.update()
 
     def show_typing(self):
         """Transition to typing state (char-by-char output with animated dots)."""
+        self._hint = None
         self._state = "typing"
         self._typing_text = "Typing"
         self._typing_show_dots = True
         self._typing_color = self.TYPE_COLOR
         self._typing_tick = 0
+        self.setFixedWidth(self.PILL_WIDTH)
         self._position_on_screen()
         self.update()
 
     def show_pasted(self):
         """Transition to pasted state (clipboard output)."""
+        self._hint = None
         self._state = "typing"
         self._typing_text = "Text Entered"
         self._typing_show_dots = False
         self._typing_color = self.TYPE_COLOR
+        self.setFixedWidth(self.PILL_WIDTH)
         self._position_on_screen()
         self.update()
 
@@ -225,6 +225,7 @@ class RecordingOverlay(QWidget):
 
     def show_no_speech(self):
         """Show 'No speech detected' in red."""
+        self._hint = None
         self._state = "typing"
         self._typing_text = "No speech detected"
         self._typing_show_dots = False
@@ -330,8 +331,8 @@ class RecordingOverlay(QWidget):
         if badges:
             self._paint_badge(painter)
 
-        # Draw hint below the pill
-        if self._hint and self._state == "recording":
+        # Draw hint below the pill (shown during processing state)
+        if self._hint and self._state == "processing":
             self._paint_hint(painter, pill_y + self.PILL_HEIGHT + self.BADGE_GAP)
 
         # Draw pill background
@@ -387,17 +388,18 @@ class RecordingOverlay(QWidget):
                 label,
             )
 
+    HINT_HEIGHT = 28  # Taller than a badge for readability
+
     def _paint_hint(self, painter, y):
-        """Draw a hint badge below the pill."""
+        """Draw a hint label below the pill with larger readable text."""
         font = QFont()
-        font.setPixelSize(11)
+        font.setPixelSize(13)
         fm = QFontMetrics(font)
         painter.setFont(font)
 
         text_width = fm.horizontalAdvance(self._hint)
-        badge_w = int(text_width + 18)
-        badge_r = self.BADGE_HEIGHT // 2
-        badge_x = (self.PILL_WIDTH - badge_w) / 2
+        badge_w = int(text_width + 24)
+        badge_r = self.HINT_HEIGHT // 2
 
         # Widen the widget if the hint text is wider than the pill
         widget_w = max(self.PILL_WIDTH, badge_w + 20)
@@ -407,15 +409,15 @@ class RecordingOverlay(QWidget):
         badge_x = (widget_w - badge_w) / 2
 
         path = QPainterPath()
-        path.addRoundedRect(badge_x, y + 0.5, badge_w, self.BADGE_HEIGHT - 1, badge_r, badge_r)
+        path.addRoundedRect(badge_x, y + 0.5, badge_w, self.HINT_HEIGHT - 1, badge_r, badge_r)
 
         painter.setPen(QPen(self.BORDER_COLOR, 1))
         painter.setBrush(QBrush(QColor(26, 26, 46, 200)))
         painter.drawPath(path)
 
-        painter.setPen(QColor(255, 255, 255, 120))
+        painter.setPen(QColor(255, 255, 255, 180))
         painter.drawText(
-            int(badge_x), int(y), badge_w, self.BADGE_HEIGHT,
+            int(badge_x), int(y), badge_w, self.HINT_HEIGHT,
             Qt.AlignmentFlag.AlignCenter,
             self._hint,
         )
