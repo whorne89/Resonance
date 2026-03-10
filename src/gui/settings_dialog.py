@@ -630,6 +630,99 @@ class _UpdateDownloadDialog(RoundedDialog):
         self._status.setText(f"Download failed: {msg}")
 
 
+class _SettingsSourceUpdateWorker(QObject):
+    """Background worker for running git pull + uv sync from settings dialog."""
+
+    progress = Signal(str, str)   # step_description, status ("running"/"done")
+    finished = Signal(bool, str)  # success, message
+
+    def run(self):
+        try:
+            from core.updater import UpdateChecker
+            checker = UpdateChecker()
+            success, message = checker.apply_source_update(
+                progress_callback=lambda desc, status: self.progress.emit(desc, status)
+            )
+            self.finished.emit(success, message)
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+class _SourceUpdateDialog(RoundedDialog):
+    """Progress dialog for source update (git pull + uv sync).
+
+    All worker signal callbacks are bound methods on this QDialog,
+    so AutoConnection correctly dispatches them to the main thread.
+    """
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._settings_dialog = parent
+        self._step_count = 0
+
+        self.setWindowTitle("Updating Resonance")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+
+        self._status = QLabel("Starting update...")
+        self._status.setStyleSheet("font-size: 12px;")
+        layout.addWidget(self._status)
+
+        self._bar = QProgressBar()
+        self._bar.setMinimum(0)
+        self._bar.setMaximum(3)  # 3 steps: fetch, pull, sync
+        self._bar.setValue(0)
+        self._bar.setTextVisible(False)
+        self._bar.setMinimumHeight(28)
+        layout.addWidget(self._bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self._cancel_btn)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+
+        # Background update thread
+        self._thread = QThread()
+        self._worker = _SettingsSourceUpdateWorker()
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+
+        # Connect to bound methods — AutoConnection dispatches to main thread
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_finished)
+
+        self._thread.start()
+
+    def _on_progress(self, desc, status):
+        self._status.setText(desc)
+        if status == "done":
+            self._step_count += 1
+            self._bar.setValue(self._step_count)
+
+    def _on_finished(self, success, message):
+        self._thread.quit()
+        if success:
+            self._bar.setValue(3)
+            self._status.setText("Update complete! Restarting...")
+            self.accept()
+            self._settings_dialog.reject()
+            # Relaunch the app
+            import sys
+            import subprocess
+            subprocess.Popen([sys.executable] + sys.argv)
+            from PySide6.QtWidgets import QApplication
+            QApplication.quit()
+        else:
+            self._status.setText(f"Update failed: {message}")
+            self._cancel_btn.setText("Close")
+
+
 class SettingsDialog(RoundedDialog):
     """Settings configuration dialog."""
 
@@ -1086,7 +1179,12 @@ class SettingsDialog(RoundedDialog):
         self._pending_release_body = release_body
 
         from utils.resource_path import is_bundled
+        from core.updater import UpdateChecker
+        checker = UpdateChecker()
         if is_bundled():
+            self._update_download_btn.show()
+        elif checker.is_git_repo():
+            self._update_download_btn.setText("Update and Restart")
             self._update_download_btn.show()
         else:
             self._update_source_hint.setText("Run: git pull && uv sync")
@@ -1122,9 +1220,22 @@ class SettingsDialog(RoundedDialog):
         if not changelog.was_accepted():
             return
 
-        # Create and run progress dialog (handles thread internally)
-        dlg = _UpdateDownloadDialog(self, version_str, download_url)
-        dlg.exec()
+        from utils.resource_path import is_bundled
+        from core.updater import UpdateChecker
+        checker = UpdateChecker()
+
+        if is_bundled():
+            # Bundled: download ZIP and apply
+            dlg = _UpdateDownloadDialog(self, version_str, download_url)
+            dlg.exec()
+        elif checker.is_git_repo():
+            # Source git repo: git pull + uv sync
+            dlg = _SourceUpdateDialog(self)
+            dlg.exec()
+        else:
+            # Non-git source install: show instructions
+            self._update_source_hint.setText("Run: git pull && uv sync")
+            self._update_source_hint.show()
 
     def create_bug_report_group(self):
         """Create bug report group box."""

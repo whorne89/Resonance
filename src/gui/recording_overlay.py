@@ -151,14 +151,27 @@ class RecordingOverlay(QWidget):
             h += self.BADGE_GAP + self.HINT_HEIGHT
         return h
 
+    def _effective_width(self):
+        """Calculate widget width, widening for hint text if needed."""
+        w = self.PILL_WIDTH
+        if self._hint and self._state == "processing":
+            font = QFont()
+            font.setPixelSize(13)
+            fm = QFontMetrics(font)
+            text_width = fm.horizontalAdvance(self._hint)
+            badge_w = int(text_width + 24)
+            w = max(w, badge_w + 20)
+        return w
+
     def _position_on_screen(self):
         """Position the overlay at bottom-center of the primary screen."""
         h = self._total_height()
-        self.setFixedSize(self.PILL_WIDTH, h)
+        w = self._effective_width()
+        self.setFixedSize(w, h)
         screen = QGuiApplication.primaryScreen()
         if screen:
             geom = screen.availableGeometry()
-            x = geom.x() + (geom.width() - self.PILL_WIDTH) // 2
+            x = geom.x() + (geom.width() - w) // 2
             y = geom.y() + geom.height() - h - self.BOTTOM_MARGIN
             self.move(x, y)
 
@@ -327,6 +340,9 @@ class RecordingOverlay(QWidget):
         badge_area = (n_badges * self.BADGE_HEIGHT + (n_badges - 1) * self.BADGE_SPACING + self.BADGE_GAP) if n_badges else 0
         pill_y = badge_area
 
+        # Horizontal offset to center the pill when widget is wider than PILL_WIDTH
+        pill_x = (self.width() - self.PILL_WIDTH) // 2
+
         # Draw badge(s) above the pill (features during recording, accuracy during typing)
         if badges:
             self._paint_badge(painter)
@@ -337,7 +353,7 @@ class RecordingOverlay(QWidget):
 
         # Draw pill background
         painter.save()
-        painter.translate(0, pill_y)
+        painter.translate(pill_x, pill_y)
 
         path = QPainterPath()
         path.addRoundedRect(
@@ -372,7 +388,7 @@ class RecordingOverlay(QWidget):
             text_width = fm.horizontalAdvance(label)
             badge_w = int(text_width + 18)
             badge_r = self.BADGE_HEIGHT // 2
-            badge_x = (self.PILL_WIDTH - badge_w) / 2
+            badge_x = (self.width() - badge_w) / 2
 
             path = QPainterPath()
             path.addRoundedRect(badge_x, y + 0.5, badge_w, self.BADGE_HEIGHT - 1, badge_r, badge_r)
@@ -400,13 +416,7 @@ class RecordingOverlay(QWidget):
         text_width = fm.horizontalAdvance(self._hint)
         badge_w = int(text_width + 24)
         badge_r = self.HINT_HEIGHT // 2
-
-        # Widen the widget if the hint text is wider than the pill
-        widget_w = max(self.PILL_WIDTH, badge_w + 20)
-        if widget_w != self.width():
-            self.setFixedWidth(widget_w)
-            self._position_on_screen()
-        badge_x = (widget_w - badge_w) / 2
+        badge_x = (self.width() - badge_w) / 2
 
         path = QPainterPath()
         path.addRoundedRect(badge_x, y + 0.5, badge_w, self.HINT_HEIGHT - 1, badge_r, badge_r)

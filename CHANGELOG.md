@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.6.0 (2026-03-10)
+
+### New Features
+
+- **Smart media pause** — Media pause now detects whether audio is actually playing before sending the play/pause toggle. Previously, pressing the hotkey with nothing playing would *start* music. Windows uses Core Audio peak meter (IAudioMeterInformation), macOS uses CoreAudio device-is-running query, Linux uses playerctl status check. Falls back to pausing on detection failure.
+- **Cross-platform PyInstaller builds** — The build spec now works on Windows, Linux, and macOS. SSL DLL bundling is Windows-only guarded, pynput hidden imports are platform-conditional (_win32/_darwin/_xorg), and dead Tesseract bundling code has been removed.
+- **Platform-aware auto-updater** — Update checker now selects the correct release asset per platform (e.g. `Resonance-windows.zip`, `Resonance-linux.tar.gz`, `Resonance-macos.zip`) instead of grabbing the first `.zip`. Supports `.tar.gz` extraction for Linux (preserves Unix execute permissions). Download filenames are preserved from the URL.
+- **GitHub Actions CI** — New workflow (`.github/workflows/build.yml`) builds bundled executables on all 3 platforms when a version tag is pushed. Creates a draft GitHub Release with `Resonance-windows.zip`, `Resonance-linux.tar.gz`, and `Resonance-macos.zip` attached.
+
+## v3.5.0 (2026-03-10)
+
+### New Features
+
+- **Source auto-update** — Source installs (git repos) now auto-update via git pull + uv sync instead of just showing "Run: git pull && uv sync". Update toast and Settings both show a changelog dialog, then run the update with a progress dialog showing each step (fetch, pull, sync), and automatically restart the app on success.
+- **macOS Accessibility permission check** — On first launch on macOS, if Accessibility permission is not granted, a dialog explains why it's needed and offers to open System Settings. The prompt only shows once per install.
+- **One-command installer** — New `install.sh` script for macOS and Linux. Installs git, uv, Tesseract OCR, clones the repo, runs `uv sync`, and creates a launcher (`.command` on macOS, `.desktop` entry on Linux). Run via: `curl -LsSf https://raw.githubusercontent.com/whorne89/Resonance/main/install.sh | bash`
+- **Testing checklist** — New `TESTING.md` with step-by-step verification checklist for contributors covering setup, transcription, sound effects, OCR, auto-update, media pause, settings, and edge cases.
+
+### Bug Fixes
+
+- **Hint text cut off on processing overlay** — The "First use may take longer while the model loads" hint badge was clipped to the 200px pill width. The overlay now dynamically widens to fit the hint text, with the pill and badges centered within the wider widget.
+
 ## v3.4.0 (2026-03-09)
 
 ### New Features

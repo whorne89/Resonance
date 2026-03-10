@@ -6,10 +6,12 @@ Checks GitHub Releases for new versions and applies updates.
 import json
 import os
 import sys
+import tarfile
 import zipfile
 import tempfile
 import subprocess
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -20,6 +22,16 @@ from utils.logger import get_logger
 
 GITHUB_REPO = "whorne89/Resonance"
 RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+
+
+def _get_platform_asset_suffix():
+    """Return the platform key used in release asset filenames."""
+    if sys.platform == "win32":
+        return "windows"
+    elif sys.platform == "darwin":
+        return "macos"
+    else:
+        return "linux"
 
 
 @dataclass
@@ -68,10 +80,12 @@ class UpdateChecker:
                 self.logger.info(f"Up to date: local={local}, remote={remote}")
                 return None
 
-            # Find .zip asset in release assets
+            # Find platform-specific asset in release assets
+            platform_key = _get_platform_asset_suffix()
             download_url = None
             for asset in data.get("assets", []):
-                if asset.get("name", "").endswith(".zip"):
+                name = asset.get("name", "").lower()
+                if platform_key in name and (name.endswith(".zip") or name.endswith(".tar.gz")):
                     download_url = asset["browser_download_url"]
                     break
 
@@ -109,7 +123,9 @@ class UpdateChecker:
         """
         try:
             updates_dir = get_app_data_path("updates")
-            filename = f"Resonance-{update_info.version_str}.zip"
+            filename = os.path.basename(urlsplit(update_info.download_url).path)
+            if not filename:
+                filename = f"Resonance-{update_info.version_str}.zip"
             dest_path = os.path.join(updates_dir, filename)
 
             # Remove previous download if it exists
@@ -163,8 +179,12 @@ class UpdateChecker:
             # Extract to system temp (not inside app dir) to avoid clutter
             temp_root = tempfile.mkdtemp(prefix="resonance_update_")
 
-            with zipfile.ZipFile(downloaded_path, "r") as zf:
-                zf.extractall(temp_root)
+            if downloaded_path.endswith((".tar.gz", ".tgz")):
+                with tarfile.open(downloaded_path, "r:gz") as tf:
+                    tf.extractall(temp_root)
+            else:
+                with zipfile.ZipFile(downloaded_path, "r") as zf:
+                    zf.extractall(temp_root)
 
             # If the ZIP contains a single top-level folder, use its contents
             source_dir = temp_root
@@ -280,6 +300,55 @@ class UpdateChecker:
             stderr=subprocess.DEVNULL,
         )
         return True
+
+    def is_git_repo(self):
+        """Check if the app root is a git repository."""
+        from pathlib import Path
+        app_root = Path(get_app_data_path()).parent
+        return (app_root / ".git").exists()
+
+    def apply_source_update(self, progress_callback=None):
+        """
+        Auto-update a source install: git fetch → git pull --ff-only → uv sync.
+
+        Args:
+            progress_callback: Optional callable(step_description, status)
+                where status is "running" or "done".
+
+        Returns:
+            (success: bool, message: str)
+        """
+        from pathlib import Path
+        app_root = str(Path(get_app_data_path()).parent)
+
+        steps = [
+            ("Fetching updates...", ["git", "fetch", "origin"], 30),
+            ("Pulling changes...", ["git", "pull", "--ff-only", "origin", "main"], 60),
+            ("Syncing dependencies...", ["uv", "sync"], 120),
+        ]
+
+        for desc, cmd, timeout in steps:
+            if progress_callback:
+                progress_callback(desc, "running")
+            try:
+                result = subprocess.run(
+                    cmd, cwd=app_root, capture_output=True, text=True, timeout=timeout
+                )
+                if result.returncode != 0:
+                    error = result.stderr.strip() or result.stdout.strip()
+                    self.logger.error(f"Source update step failed: {desc} — {error}")
+                    return False, f"{desc}\n{error}"
+                if progress_callback:
+                    progress_callback(desc, "done")
+            except subprocess.TimeoutExpired:
+                self.logger.error(f"Source update step timed out: {desc}")
+                return False, f"{desc} timed out"
+            except FileNotFoundError:
+                self.logger.error(f"Command not found: {cmd[0]}")
+                return False, f"Command not found: {cmd[0]}"
+
+        self.logger.info("Source update completed successfully")
+        return True, "Update complete! Restarting..."
 
     @staticmethod
     def get_source_update_message(update_info):

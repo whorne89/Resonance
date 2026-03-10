@@ -54,7 +54,7 @@ resonance.spec               - PyInstaller build spec (--onedir)
 - **CPU only, GPU scrapped** — see GPU section below.
 
 ## Versioning
-- **Single source of truth**: `version` field in `pyproject.toml` (currently 3.1.6)
+- **Single source of truth**: `version` field in `pyproject.toml` (currently 3.5.0)
 - About dialog reads via `importlib.metadata.version('resonance')` — never hardcode version strings
 - Package must be installed in editable mode (`uv pip install -e .`) for importlib.metadata to work
 - In bundled EXE, version lives in `_internal/resonance-X.Y.Z.dist-info/` — only ONE such directory must exist or `importlib.metadata` picks the wrong version (alphabetically first)

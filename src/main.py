@@ -266,6 +266,21 @@ class _UpdateDownloadWorker(QObject):
         self.progress.emit(downloaded, total)
 
 
+class _SourceUpdateWorker(QObject):
+    """Worker for running source update (git pull + uv sync) in background."""
+
+    progress = Signal(str, str)   # step_description, status ("running"/"done")
+    finished = Signal(bool, str)  # success, message
+
+    def run(self):
+        from core.updater import UpdateChecker
+        checker = UpdateChecker()
+        success, message = checker.apply_source_update(
+            progress_callback=lambda desc, status: self.progress.emit(desc, status)
+        )
+        self.finished.emit(success, message)
+
+
 class VTTApplication(QObject):
     """Main application controller."""
 
@@ -286,6 +301,8 @@ class VTTApplication(QObject):
     _relay_dl_progress = Signal(int, int)     # downloaded, total
     _relay_dl_finished = Signal(str)          # path
     _relay_dl_error = Signal(str)
+    _relay_src_progress = Signal(str, str)   # step, status
+    _relay_src_finished = Signal(bool, str)  # success, message
 
     def __init__(self):
         super().__init__()
@@ -989,6 +1006,41 @@ def main():
     # Apply dark theme
     apply_theme(app)
 
+    # macOS: check Accessibility permission (required for hotkeys + typing)
+    if sys.platform == "darwin":
+        from utils.platform_check import check_accessibility_permission, open_accessibility_settings
+        from gui.theme import RoundedDialog
+        config_mgr = ConfigManager()
+        if not check_accessibility_permission() and not config_mgr.get("accessibility_prompted", default=False):
+            dlg = RoundedDialog()
+            dlg.setWindowTitle("Accessibility Permission Required")
+            dlg.setMinimumWidth(400)
+            _layout = QVBoxLayout()
+            _layout.setSpacing(16)
+            _msg = QLabel(
+                "Resonance needs Accessibility permission for global hotkeys "
+                "and simulated typing.\n\n"
+                "Go to System Settings > Privacy & Security > Accessibility "
+                "and add this app."
+            )
+            _msg.setWordWrap(True)
+            _msg.setStyleSheet("font-size: 12px;")
+            _layout.addWidget(_msg)
+            _btn_row = QHBoxLayout()
+            _btn_row.addStretch()
+            _open_btn = QPushButton("Open System Settings")
+            _open_btn.clicked.connect(dlg.reject)
+            _continue_btn = QPushButton("Continue Anyway")
+            _continue_btn.clicked.connect(dlg.accept)
+            _btn_row.addWidget(_open_btn)
+            _btn_row.addWidget(_continue_btn)
+            _btn_row.addStretch()
+            _layout.addLayout(_btn_row)
+            dlg.setLayout(_layout)
+            if not dlg.exec():
+                open_accessibility_settings()
+            config_mgr.set("accessibility_prompted", value=True)
+
     # Create application controller
     vtt_app = VTTApplication()
 
@@ -1133,10 +1185,20 @@ def main():
                         if changelog.was_accepted():
                             _download_and_apply(version_str, download_url, vtt_app)
                     else:
-                        from core.updater import UpdateChecker, UpdateInfo
-                        info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)
-                        msg = UpdateChecker.get_source_update_message(info)
-                        tray_icon.show_message("Update Available", msg)
+                        from core.updater import UpdateChecker
+                        checker = UpdateChecker()
+                        if checker.is_git_repo():
+                            from gui.changelog_dialog import ChangelogDialog
+                            changelog = ChangelogDialog(version_str, release_body)
+                            vtt_app._changelog_dialog = changelog
+                            changelog.exec()
+                            if changelog.was_accepted():
+                                _source_update_and_restart(vtt_app)
+                        else:
+                            from core.updater import UpdateInfo
+                            info = UpdateInfo(version_str=version_str, tag_name=tag_name, download_url=download_url)
+                            msg = UpdateChecker.get_source_update_message(info)
+                            tray_icon.show_message("Update Available", msg)
 
                 toast.accepted.connect(_on_accepted)
                 toast.show_toast()
@@ -1234,6 +1296,77 @@ def main():
         dlg._dl_worker = dl_worker
 
         dl_thread.start()
+        dlg.exec()
+
+    def _source_update_and_restart(vtt_app):
+        """Run git pull + uv sync with a progress dialog, then restart."""
+        from gui.theme import RoundedDialog
+
+        dlg = RoundedDialog()
+        dlg.setWindowTitle("Updating Resonance")
+        dlg.setMinimumWidth(420)
+
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
+        status = QLabel("Starting update...")
+        status.setStyleSheet("font-size: 12px;")
+        layout.addWidget(status)
+
+        bar = QProgressBar()
+        bar.setMinimum(0)
+        bar.setMaximum(3)  # 3 steps: fetch, pull, sync
+        bar.setValue(0)
+        bar.setTextVisible(False)
+        bar.setMinimumHeight(28)
+        layout.addWidget(bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        dlg.setLayout(layout)
+
+        step_count = [0]  # mutable counter for closure
+
+        src_thread = QThread()
+        src_worker = _SourceUpdateWorker()
+        src_worker.moveToThread(src_thread)
+        src_thread.started.connect(src_worker.run)
+
+        def _on_src_progress(desc, step_status):
+            status.setText(desc)
+            if step_status == "done":
+                step_count[0] += 1
+                bar.setValue(step_count[0])
+
+        def _on_src_finished(success, message):
+            src_thread.quit()
+            if success:
+                bar.setValue(3)
+                status.setText("Update complete! Restarting...")
+                dlg.accept()
+                # Relaunch the app
+                import subprocess as sp
+                sp.Popen([sys.executable] + sys.argv)
+                vtt_app.quit()
+            else:
+                status.setText(f"Update failed: {message}")
+                cancel_btn.setText("Close")
+
+        # Relay through vtt_app for main-thread safety
+        src_worker.progress.connect(vtt_app._relay_src_progress)
+        src_worker.finished.connect(vtt_app._relay_src_finished)
+        vtt_app._relay_src_progress.connect(_on_src_progress)
+        vtt_app._relay_src_finished.connect(_on_src_finished)
+
+        # Keep references
+        dlg._src_thread = src_thread
+        dlg._src_worker = src_worker
+
+        src_thread.start()
         dlg.exec()
 
     QTimer.singleShot(8000, _start_update_check)
