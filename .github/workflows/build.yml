@@ -16,12 +16,6 @@ jobs:
           - os: windows-latest
             platform: windows
             archive_ext: zip
-          - os: ubuntu-latest
-            platform: linux
-            archive_ext: tar.gz
-          - os: macos-latest
-            platform: macos
-            archive_ext: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -37,17 +31,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Install system dependencies (Linux)
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tesseract-ocr portaudio19-dev
-
-      - name: Install system dependencies (macOS)
-        if: matrix.platform == 'macos'
-        run: |
-          brew install tesseract portaudio
-
       - name: Create venv and install
         run: |
           uv venv
@@ -57,16 +40,8 @@ jobs:
         run: uv run pyinstaller resonance.spec -y
 
       - name: Archive (Windows)
-        if: matrix.platform == 'windows'
-        run: 7z a "Resonance-windows.zip" "./dist/Resonance/"
-
-      - name: Archive (Linux)
-        if: matrix.platform == 'linux'
-        run: tar -czf "Resonance-linux.tar.gz" -C dist Resonance
-
-      - name: Archive (macOS)
-        if: matrix.platform == 'macos'
-        run: cd dist && zip -r "../Resonance-macos.zip" Resonance
+        shell: bash
+        run: cd dist && 7z a ../Resonance-windows.zip Resonance/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -90,5 +65,3 @@ jobs:
           draft: true
           files: |
             artifacts/Resonance-windows/Resonance-windows.zip
-            artifacts/Resonance-linux/Resonance-linux.tar.gz
-            artifacts/Resonance-macos/Resonance-macos.zip

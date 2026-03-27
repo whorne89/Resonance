@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.6.2 (2026-03-27)
+
+### Bug Fixes
+
+- **Auto-updater: fix ZIP structure so files actually replace on update** — The Windows CI archive step was producing `dist/Resonance/…` inside the ZIP instead of `Resonance/…` at the root. The updater's single-folder detection picked `dist/` as the source, so xcopy nested new files at `app_dir/Resonance/` instead of overwriting `app_dir/`. Fixed by running `cd dist && 7z a ../Resonance-windows.zip Resonance/` in CI.
+- **Auto-updater: add delay and retry loop for file-lock failures** — Even with correct ZIP structure, xcopy silently failed on locked DLLs/PYZ archive right after process exit. Added a 5-second delay after PID exit to let Windows release file handles, then a 3-attempt retry loop (2s between attempts) so transient locks don't abort the copy.
+- **Startup toast: show current version number** — The startup toast now displays the running version (e.g. `v3.6.2`) in the details section, making it easy to confirm the correct code is running after an auto-update.
+- **Remove macOS and Linux builds from CI** — Both non-Windows release assets were building successfully but not functional at runtime due to missing platform abstractions (OCR, media control, Accessibility permissions). Removed from the build matrix to avoid distributing broken packages. Cross-platform support remains a future goal (Linux is being worked on in PR #10).
+
 ## v3.6.1 (2026-03-10)
 
 ### Bug Fixes

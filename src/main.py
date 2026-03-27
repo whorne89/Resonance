@@ -1078,6 +1078,11 @@ def main():
 
     def _build_startup_details():
         """Build the startup toast details string."""
+        try:
+            from importlib.metadata import version as _pkg_ver
+            ver_line = f"v{_pkg_ver('resonance')}\n"
+        except Exception:
+            ver_line = ""
         pp_status = "On" if vtt_app.config.get_post_processing_enabled() else "Off"
         if vtt_app.screen_context is not None:
             osr_status = "Learning OSR: On" if vtt_app.config.get_learning_enabled() else "OSR: On"
@@ -1086,6 +1091,7 @@ def main():
         use_clipboard = vtt_app.config.get("typing", "use_clipboard_fallback", default=False)
         entry_method = "Clipboard" if use_clipboard else "Character-by-character"
         return (
+            f"{ver_line}"
             f"Model: {model_label}\n"
             f"{osr_status}\n"
             f"Post-processing: {pp_status}\n"

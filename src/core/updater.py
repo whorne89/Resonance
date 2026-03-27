@@ -228,7 +228,9 @@ class UpdateChecker:
             "    timeout /t 1 /nobreak >NUL\n"
             "    goto waitloop\n"
             ")\n"
-            f'echo [%date% %time%] Process exited, cleaning old dist-info >> "{log_path}"\n'
+            f'echo [%date% %time%] Process exited, waiting for file locks to release >> "{log_path}"\n'
+            "timeout /t 5 /nobreak >NUL\n"
+            f'echo [%date% %time%] Cleaning old dist-info >> "{log_path}"\n'
             f'pushd "{app_dir}\\_internal"\n'
             f'for /D %%d in (resonance-*.dist-info) do (\n'
             f'    echo [%date% %time%] Removing %%d >> "{log_path}"\n'
@@ -236,8 +238,21 @@ class UpdateChecker:
             f')\n'
             f'popd\n'
             f'echo [%date% %time%] Copying new files >> "{log_path}"\n'
+            "set XCOPY_ATTEMPT=0\n"
+            ":xcopyloop\n"
             f'xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >> "{log_path}" 2>&1\n'
             f'echo [%date% %time%] xcopy exit code: %errorlevel% >> "{log_path}"\n'
+            "if errorlevel 1 (\n"
+            "    set /a XCOPY_ATTEMPT+=1\n"
+            f'    echo [%date% %time%] xcopy failed, attempt %XCOPY_ATTEMPT%/3 >> "{log_path}"\n'
+            "    if %XCOPY_ATTEMPT% lss 3 (\n"
+            "        timeout /t 2 /nobreak >NUL\n"
+            "        goto xcopyloop\n"
+            "    )\n"
+            f'    echo [%date% %time%] xcopy failed after 3 attempts >> "{log_path}"\n'
+            ") else (\n"
+            f'    echo [%date% %time%] xcopy succeeded >> "{log_path}"\n'
+            ")\n"
             f'echo [%date% %time%] Relaunching >> "{log_path}"\n'
             f'start "" "{exe_path}"\n'
             f'rd /S /Q "{temp_root}" 2>NUL\n'
